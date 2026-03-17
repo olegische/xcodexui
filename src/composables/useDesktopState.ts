@@ -1940,18 +1940,26 @@ export function useDesktopState() {
 
   function queueEventDrivenSync(notification: RpcNotification): void {
     const threadId = extractThreadIdFromNotification(notification)
-    if (threadId) {
+    const method = notification.method
+    const shouldRefreshThreadMessages =
+      method === 'turn/completed'
+
+    const shouldRefreshThreads =
+      method === 'thread/started'
+      || method === 'thread/archived'
+      || method === 'thread/unarchived'
+      || method === 'thread/closed'
+      || method === 'thread/name/updated'
+
+    if (threadId && shouldRefreshThreadMessages) {
       pendingThreadMessageRefresh.add(threadId)
     }
 
-    const method = notification.method
-    if (
-      method.startsWith('thread/') ||
-      method.startsWith('turn/') ||
-      method.startsWith('item/')
-    ) {
+    if (shouldRefreshThreads) {
       pendingThreadsRefresh = true
     }
+
+    if (!shouldRefreshThreadMessages && !shouldRefreshThreads) return
 
     if (eventSyncTimer !== null || typeof window === 'undefined') return
     eventSyncTimer = window.setTimeout(() => {

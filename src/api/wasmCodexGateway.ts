@@ -150,10 +150,14 @@ export async function getThreadMessages(threadId: string): Promise<UiMessage[]> 
 }
 
 export async function getThreadDetail(threadId: string): Promise<{ messages: UiMessage[]; inProgress: boolean }> {
-  const { runtime } = await getWasmRuntimeContext()
-  const dispatch = await runtime.resumeThread({ threadId })
-  await syncThreadIndexFromSnapshot(dispatch.value)
-  const payload = { thread: dispatch.value.metadata } as any
+  const context = await getWasmRuntimeContext()
+  let snapshot = await context.loadSession(threadId)
+  if (snapshot === null) {
+    const dispatch = await context.runtime.resumeThread({ threadId })
+    snapshot = dispatch.value
+  }
+  await syncThreadIndexFromSnapshot(snapshot)
+  const payload = { thread: snapshot.metadata } as any
   return {
     messages: normalizeThreadMessagesV2(payload),
     inProgress: readThreadInProgressFromResponse(payload),
@@ -233,8 +237,6 @@ export async function startThreadTurn(
   fileAttachments: Array<{ label: string; path: string; fsPath: string }> = [],
 ): Promise<void> {
   const context = await getWasmRuntimeContext()
-  const resumed = await context.runtime.resumeThread({ threadId })
-  await syncThreadIndexFromSnapshot(resumed.value)
   const currentConfig = await context.loadConfig()
   const nextConfig = {
     ...currentConfig,

@@ -74,6 +74,7 @@ type WasmRuntimeContext = {
   runtime: WasmBrowserRuntime
   loadConfig: () => Promise<CodexCompatibleConfig>
   saveConfig: (config: CodexCompatibleConfig) => Promise<void>
+  loadSession: (threadId: string) => Promise<SessionSnapshot | null>
   subscribe: (listener: (notification: RpcNotification) => void) => () => void
 }
 let runtimeContextPromise: Promise<WasmRuntimeContext> | null = null
@@ -293,6 +294,7 @@ export async function getWasmRuntimeContext(): Promise<WasmRuntimeContext> {
       runtime,
       loadConfig: loadStoredCodexConfig,
       saveConfig: saveStoredCodexConfig,
+      loadSession: loadStoredSession,
       subscribe(listener) {
         return subscribeWasmNotifications(listener)
       },
