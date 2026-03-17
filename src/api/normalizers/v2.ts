@@ -160,7 +160,57 @@ function toUiMessages(item: ThreadItem): UiMessage[] {
     ]
   }
 
+  const itemType = item.type as string
+  if (itemType === 'dynamicToolCall' || itemType === 'mcpToolCall') {
+    const raw = item as Record<string, unknown>
+    const toolText = formatToolMessageText(itemType, raw)
+    if (!toolText) {
+      return []
+    }
+    return [
+      {
+        id: item.id,
+        role: 'system',
+        text: toolText,
+        messageType: 'toolCall',
+      },
+    ]
+  }
+
   return []
+}
+
+function formatToolMessageText(type: string, item: Record<string, unknown>): string {
+  if (type === 'dynamicToolCall') {
+    const tool = typeof item.tool === 'string' ? item.tool : ''
+    if (!tool) return ''
+    return typeof item.contentItems !== 'undefined' ? `Called ${tool}` : `Calling ${tool}`
+  }
+
+  if (type === 'mcpToolCall') {
+    const tool = typeof item.tool === 'string' ? item.tool : ''
+    const server = typeof item.server === 'string' ? item.server : ''
+    const label = tool && server ? `${tool} tool from ${formatMcpServerLabel(server)}` : tool
+    if (!label) return ''
+    return typeof item.result !== 'undefined' || typeof item.error !== 'undefined'
+      ? `Called ${label}`
+      : `Calling ${label}`
+  }
+
+  return ''
+}
+
+function formatMcpServerLabel(server: string): string {
+  const normalized = server
+    .replace(/^mcp__/u, '')
+    .replace(/__$/u, '')
+    .trim()
+  if (!normalized) return 'MCP'
+  return `${normalized
+    .split(/[\s_]+/u)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ')} MCP`
 }
 
 function normalizeCommandStatus(value: unknown): CommandExecutionData['status'] {
