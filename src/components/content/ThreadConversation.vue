@@ -181,7 +181,6 @@
                 </div>
                 <p v-else-if="isToolCallMessage(message)" class="tool-call-line">
                   <span class="tool-call-verb">{{ parseToolCallMessage(message.text).verb }}</span>
-                  <span class="tool-call-gap" aria-hidden="true"> </span>
                   <span class="tool-call-subject">{{ parseToolCallMessage(message.text).subject }}</span>
                 </p>
                 <div v-else class="message-text-flow">
@@ -1139,11 +1138,11 @@ onBeforeUnmount(() => {
 }
 
 .tool-call-line {
-  @apply m-0 text-sm leading-relaxed whitespace-pre-wrap;
+  @apply m-0 inline-flex items-baseline gap-1.5 text-sm leading-relaxed whitespace-pre-wrap;
 }
 
 .tool-call-verb {
-  @apply text-slate-800;
+  @apply text-zinc-100 font-medium;
 }
 
 .tool-call-subject {
