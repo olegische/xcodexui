@@ -1142,7 +1142,7 @@ onBeforeUnmount(() => {
 }
 
 .tool-call-verb {
-  @apply text-zinc-100 font-medium;
+  @apply text-zinc-300 font-medium;
 }
 
 .tool-call-subject {
