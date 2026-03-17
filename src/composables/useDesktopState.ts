@@ -2293,11 +2293,12 @@ export function useDesktopState() {
       }
 
       const { messages: nextMessages, inProgress } = await getThreadDetail(threadId)
-      const finalizedSnapshot = finalizedTurnSnapshotByThreadId.value[threadId]
-      const previousPersisted = finalizedSnapshot?.messages ?? persistedMessagesByThreadId.value[threadId] ?? []
-      const mergedMessages = mergeMessages(previousPersisted, nextMessages, {
-        preserveMissing: options.silent === true,
-      })
+      const previousPersisted = persistedMessagesByThreadId.value[threadId] ?? []
+      const mergedMessages = inProgress
+        ? mergeMessages(previousPersisted, nextMessages, {
+            preserveMissing: options.silent === true,
+          })
+        : nextMessages
       setPersistedMessagesForThread(threadId, mergedMessages)
 
       if (inProgress) {
