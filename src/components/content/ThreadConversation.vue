@@ -181,6 +181,7 @@
                 </div>
                 <p v-else-if="isToolCallMessage(message)" class="tool-call-line">
                   <span class="tool-call-verb">{{ parseToolCallMessage(message.text).verb }}</span>
+                  <span class="tool-call-gap" aria-hidden="true"> </span>
                   <span class="tool-call-subject">{{ parseToolCallMessage(message.text).subject }}</span>
                 </p>
                 <div v-else class="message-text-flow">
