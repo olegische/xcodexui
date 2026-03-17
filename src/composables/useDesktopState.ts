@@ -423,6 +423,12 @@ type TurnCompletedInfo = {
   startedAtMs?: number
 }
 
+type LiveTextSegmentState = {
+  kind: 'assistant' | 'reasoning'
+  itemId: string
+  messageId: string
+}
+
 const WORKED_MESSAGE_TYPE = 'worked'
 
 function parseIsoTimestamp(value: string): number | null {
@@ -650,7 +656,8 @@ export function useDesktopState() {
   const selectedThreadId = ref(loadSelectedThreadId())
   const persistedMessagesByThreadId = ref<Record<string, UiMessage[]>>({})
   const liveAgentMessagesByThreadId = ref<Record<string, UiMessage[]>>({})
-  const liveReasoningTextByThreadId = ref<Record<string, string>>({})
+  const liveTextSegmentByThreadId = ref<Record<string, LiveTextSegmentState>>({})
+  const liveTextSegmentCountByThreadId = ref<Record<string, number>>({})
   const liveCommandsByThreadId = ref<Record<string, UiMessage[]>>({})
   const inProgressById = ref<Record<string, boolean>>({})
   type FileAttachment = { label: string; path: string; fsPath: string }
@@ -731,14 +738,13 @@ export function useDesktopState() {
     if (!threadId) return null
 
     const activity = turnActivityByThreadId.value[threadId]
-    const reasoningText = (liveReasoningTextByThreadId.value[threadId] ?? '').trim()
     const errorText = (turnErrorByThreadId.value[threadId]?.message ?? '').trim()
 
-    if (!activity && !reasoningText && !errorText) return null
+    if (!activity && !errorText) return null
     return {
       activityLabel: activity?.label || 'Thinking',
       activityDetails: activity?.details ?? [],
-      reasoningText,
+      reasoningText: '',
       errorText,
     }
   })
@@ -853,7 +859,7 @@ export function useDesktopState() {
         const rolledBackMessages = await rollbackThread(threadId, 1)
         setPersistedMessagesForThread(threadId, rolledBackMessages)
         setLiveAgentMessagesForThread(threadId, [])
-        clearLiveReasoningForThread(threadId)
+        clearActiveLiveTextSegment(threadId)
         if (liveCommandsByThreadId.value[threadId]) {
           liveCommandsByThreadId.value = omitKey(liveCommandsByThreadId.value, threadId)
         }
@@ -1034,7 +1040,8 @@ export function useDesktopState() {
     resumedThreadById.value = pruneThreadStateMap(resumedThreadById.value, activeThreadIds)
     persistedMessagesByThreadId.value = pruneThreadStateMap(persistedMessagesByThreadId.value, activeThreadIds)
     liveAgentMessagesByThreadId.value = pruneThreadStateMap(liveAgentMessagesByThreadId.value, activeThreadIds)
-    liveReasoningTextByThreadId.value = pruneThreadStateMap(liveReasoningTextByThreadId.value, activeThreadIds)
+    liveTextSegmentByThreadId.value = pruneThreadStateMap(liveTextSegmentByThreadId.value, activeThreadIds)
+    liveTextSegmentCountByThreadId.value = pruneThreadStateMap(liveTextSegmentCountByThreadId.value, activeThreadIds)
     liveCommandsByThreadId.value = pruneThreadStateMap(liveCommandsByThreadId.value, activeThreadIds)
     turnSummaryByThreadId.value = pruneThreadStateMap(turnSummaryByThreadId.value, activeThreadIds)
     turnActivityByThreadId.value = pruneThreadStateMap(turnActivityByThreadId.value, activeThreadIds)
@@ -1214,32 +1221,68 @@ export function useDesktopState() {
     setLiveAgentMessagesForThread(threadId, next)
   }
 
-  function setLiveReasoningText(threadId: string, text: string): void {
-    if (!threadId) return
-    const normalized = text.trim()
-    const previous = liveReasoningTextByThreadId.value[threadId] ?? ''
-    if (normalized.length === 0) {
-      if (!previous) return
-      liveReasoningTextByThreadId.value = omitKey(liveReasoningTextByThreadId.value, threadId)
-      return
+  function clearActiveLiveTextSegment(threadId: string): void {
+    if (!liveTextSegmentByThreadId.value[threadId]) return
+    liveTextSegmentByThreadId.value = omitKey(liveTextSegmentByThreadId.value, threadId)
+  }
+
+  function nextLiveTextSegmentMessageId(
+    threadId: string,
+    kind: LiveTextSegmentState['kind'],
+    itemId: string,
+  ): string {
+    const nextCount = (liveTextSegmentCountByThreadId.value[threadId] ?? 0) + 1
+    liveTextSegmentCountByThreadId.value = {
+      ...liveTextSegmentCountByThreadId.value,
+      [threadId]: nextCount,
     }
-    if (previous === normalized) return
-    liveReasoningTextByThreadId.value = {
-      ...liveReasoningTextByThreadId.value,
-      [threadId]: normalized,
+    return `${kind}:${itemId}:segment:${nextCount}`
+  }
+
+  function appendLiveTextSegment(
+    threadId: string,
+    kind: LiveTextSegmentState['kind'],
+    itemId: string,
+    delta: string,
+  ): void {
+    if (!delta) return
+
+    const activeSegment = liveTextSegmentByThreadId.value[threadId]
+    if (activeSegment && activeSegment.kind === kind && activeSegment.itemId === itemId) {
+      const existing = (liveAgentMessagesByThreadId.value[threadId] ?? [])
+        .find((message) => message.id === activeSegment.messageId)
+      if (!existing) {
+        clearActiveLiveTextSegment(threadId)
+      } else {
+        upsertLiveAgentMessage(threadId, {
+          ...existing,
+          text: `${existing.text}${delta}`,
+        })
+        return
+      }
+    }
+
+    const messageId = nextLiveTextSegmentMessageId(threadId, kind, itemId)
+    upsertLiveAgentMessage(threadId, {
+      id: messageId,
+      role: 'assistant',
+      text: delta,
+      messageType: kind === 'reasoning' ? 'reasoning.live' : 'agentMessage.live',
+    })
+    liveTextSegmentByThreadId.value = {
+      ...liveTextSegmentByThreadId.value,
+      [threadId]: { kind, itemId, messageId },
     }
   }
 
-  function appendLiveReasoningText(threadId: string, delta: string): void {
-    if (!threadId) return
-    const previous = liveReasoningTextByThreadId.value[threadId] ?? ''
-    setLiveReasoningText(threadId, `${previous}${delta}`)
-  }
-
-  function clearLiveReasoningForThread(threadId: string): void {
-    if (!threadId) return
-    if (!(threadId in liveReasoningTextByThreadId.value)) return
-    liveReasoningTextByThreadId.value = omitKey(liveReasoningTextByThreadId.value, threadId)
+  function hasLiveTextSegmentsForItem(
+    threadId: string,
+    kind: LiveTextSegmentState['kind'],
+    itemId: string,
+  ): boolean {
+    const prefix = `${kind}:${itemId}:segment:`
+    return (liveAgentMessagesByThreadId.value[threadId] ?? [])
+      .some((message) => message.id.startsWith(prefix))
   }
 
   function asRecord(value: unknown): Record<string, unknown> | null {
@@ -1580,10 +1623,6 @@ export function useDesktopState() {
     }
   }
 
-  function liveReasoningMessageId(reasoningItemId: string): string {
-    return `${reasoningItemId}:live-reasoning`
-  }
-
   function readReasoningStartedItemId(notification: RpcNotification): string {
     const params = asRecord(notification.params)
     if (!params) return ''
@@ -1597,7 +1636,7 @@ export function useDesktopState() {
     return ''
   }
 
-  function readReasoningDelta(notification: RpcNotification): { messageId: string; delta: string } | null {
+  function readReasoningDelta(notification: RpcNotification): { itemId: string; delta: string } | null {
     const params = asRecord(notification.params)
     if (!params) return null
 
@@ -1606,13 +1645,13 @@ export function useDesktopState() {
       const itemId = readString(params.itemId)
       const delta = readString(params.delta)
       if (!itemId || !delta) return null
-      return { messageId: liveReasoningMessageId(itemId), delta }
+      return { itemId, delta }
     }
 
     return null
   }
 
-  function readReasoningSectionBreakMessageId(notification: RpcNotification): string {
+  function readReasoningSectionBreakItemId(notification: RpcNotification): string {
     const params = asRecord(notification.params)
     if (!params) return ''
 
@@ -1620,20 +1659,20 @@ export function useDesktopState() {
     if (notification.method === 'item/reasoning/summaryPartAdded') {
       const itemId = readString(params.itemId)
       if (!itemId) return ''
-      return liveReasoningMessageId(itemId)
+      return itemId
     }
 
     return ''
   }
 
-  function readReasoningCompletedId(notification: RpcNotification): string {
+  function readReasoningCompletedItemId(notification: RpcNotification): string {
     const params = asRecord(notification.params)
     if (!params) return ''
 
     if (notification.method === 'item/completed') {
       const item = asRecord(params.item)
       if (!item || item.type !== 'reasoning') return ''
-      return liveReasoningMessageId(readString(item.id))
+      return readString(item.id)
     }
 
     return ''
@@ -1667,7 +1706,7 @@ export function useDesktopState() {
     return null
   }
 
-  function readAgentMessageCompleted(notification: RpcNotification): UiMessage | null {
+  function readAgentMessageCompleted(notification: RpcNotification): { itemId: string; text: string } | null {
     const params = asRecord(notification.params)
     if (!params) return null
 
@@ -1677,12 +1716,7 @@ export function useDesktopState() {
       const id = readString(item.id)
       const text = readString(item.text)
       if (!id || !text) return null
-      return {
-        id,
-        role: 'assistant',
-        text,
-        messageType: 'agentMessage.live',
-      }
+      return { itemId: id, text }
     }
 
     return null
@@ -1916,63 +1950,74 @@ export function useDesktopState() {
 
     const startedAgentMessageId = readAgentMessageStartedId(notification)
     if (startedAgentMessageId) {
-      activeReasoningItemId = ''
+      clearActiveLiveTextSegment(notificationThreadId)
     }
 
     const liveAgentMessageDelta = readAgentMessageDelta(notification)
     if (liveAgentMessageDelta) {
-      const existing = (liveAgentMessagesByThreadId.value[notificationThreadId] ?? [])
-        .find((message) => message.id === liveAgentMessageDelta.messageId)
-      const nextText = `${existing?.text ?? ''}${liveAgentMessageDelta.delta}`
-      upsertLiveAgentMessage(notificationThreadId, {
-        id: liveAgentMessageDelta.messageId,
-        role: 'assistant',
-        text: nextText,
-        messageType: 'agentMessage.live',
-      })
+      appendLiveTextSegment(
+        notificationThreadId,
+        'assistant',
+        liveAgentMessageDelta.messageId,
+        liveAgentMessageDelta.delta,
+      )
     }
 
     const completedAgentMessage = readAgentMessageCompleted(notification)
     if (completedAgentMessage) {
-      upsertLiveAgentMessage(notificationThreadId, completedAgentMessage)
+      if (!hasLiveTextSegmentsForItem(notificationThreadId, 'assistant', completedAgentMessage.itemId)) {
+        appendLiveTextSegment(
+          notificationThreadId,
+          'assistant',
+          completedAgentMessage.itemId,
+          completedAgentMessage.text,
+        )
+      }
+      clearActiveLiveTextSegment(notificationThreadId)
     }
 
     const startedReasoningItemId = readReasoningStartedItemId(notification)
     if (startedReasoningItemId) {
-      if (startedReasoningItemId !== activeReasoningItemId) {
-        clearLiveReasoningForThread(notificationThreadId)
-      }
       activeReasoningItemId = startedReasoningItemId
+      clearActiveLiveTextSegment(notificationThreadId)
     }
 
     const liveReasoningDelta = readReasoningDelta(notification)
     if (liveReasoningDelta) {
-      appendLiveReasoningText(notificationThreadId, liveReasoningDelta.delta)
+      appendLiveTextSegment(
+        notificationThreadId,
+        'reasoning',
+        liveReasoningDelta.itemId,
+        liveReasoningDelta.delta,
+      )
     }
 
-    const sectionBreakMessageId = readReasoningSectionBreakMessageId(notification)
-    if (sectionBreakMessageId) {
-      const current = liveReasoningTextByThreadId.value[notificationThreadId] ?? ''
-      if (current.trim().length > 0 && !current.endsWith('\n\n')) {
-        setLiveReasoningText(notificationThreadId, `${current}\n\n`)
+    const sectionBreakItemId = readReasoningSectionBreakItemId(notification)
+    if (sectionBreakItemId) {
+      const activeSegment = liveTextSegmentByThreadId.value[notificationThreadId]
+      if (activeSegment?.kind === 'reasoning' && activeSegment.itemId === sectionBreakItemId) {
+        appendLiveTextSegment(notificationThreadId, 'reasoning', sectionBreakItemId, '\n\n')
       }
     }
 
-    const completedReasoningMessageId = readReasoningCompletedId(notification)
-    if (completedReasoningMessageId) {
-      if (completedReasoningMessageId === liveReasoningMessageId(activeReasoningItemId)) {
+    const completedReasoningItemId = readReasoningCompletedItemId(notification)
+    if (completedReasoningItemId) {
+      if (completedReasoningItemId === activeReasoningItemId) {
         activeReasoningItemId = ''
       }
+      clearActiveLiveTextSegment(notificationThreadId)
     }
 
     const commandStarted = readCommandExecutionStarted(notification)
     if (commandStarted) {
+      clearActiveLiveTextSegment(notificationThreadId)
       upsertLiveCommand(notificationThreadId, commandStarted)
       setTurnActivityForThread(notificationThreadId, { label: 'Running command', details: [commandStarted.commandExecution?.command ?? ''] })
     }
 
     const toolStarted = readToolCallStarted(notification)
     if (toolStarted) {
+      clearActiveLiveTextSegment(notificationThreadId)
       upsertLiveAgentMessage(notificationThreadId, toolStarted)
       setTurnActivityForThread(notificationThreadId, { label: 'Calling', details: [] })
     }
@@ -1990,11 +2035,13 @@ export function useDesktopState() {
 
     const commandCompleted = readCommandExecutionCompleted(notification)
     if (commandCompleted) {
+      clearActiveLiveTextSegment(notificationThreadId)
       upsertLiveCommand(notificationThreadId, commandCompleted)
     }
 
     const toolCompleted = readToolCallCompleted(notification)
     if (toolCompleted) {
+      clearActiveLiveTextSegment(notificationThreadId)
       upsertLiveAgentMessage(notificationThreadId, toolCompleted)
     }
 
@@ -2006,18 +2053,15 @@ export function useDesktopState() {
           scrollRatio: 1,
         })
       }
-      activeReasoningItemId = ''
-      clearLiveReasoningForThread(notificationThreadId)
     }
 
     if (notification.method === 'turn/completed') {
       activeReasoningItemId = ''
       shouldAutoScrollOnNextAgentEvent = false
-      clearLiveReasoningForThread(notificationThreadId)
+      clearActiveLiveTextSegment(notificationThreadId)
       const currentLive = liveAgentMessagesByThreadId.value[notificationThreadId] ?? []
-      const filteredLive = currentLive.filter((message) => message.messageType !== 'toolCall')
-      if (filteredLive.length !== currentLive.length) {
-        setLiveAgentMessagesForThread(notificationThreadId, filteredLive)
+      if (currentLive.length > 0) {
+        setLiveAgentMessagesForThread(notificationThreadId, [])
       }
       if (liveCommandsByThreadId.value[notificationThreadId]) {
         liveCommandsByThreadId.value = omitKey(liveCommandsByThreadId.value, notificationThreadId)
@@ -2571,7 +2615,7 @@ export function useDesktopState() {
       const nextMessages = await rollbackThread(threadId, numTurns)
       setPersistedMessagesForThread(threadId, nextMessages)
       setLiveAgentMessagesForThread(threadId, [])
-      clearLiveReasoningForThread(threadId)
+      clearActiveLiveTextSegment(threadId)
       if (liveCommandsByThreadId.value[threadId]) {
         liveCommandsByThreadId.value = omitKey(liveCommandsByThreadId.value, threadId)
       }
@@ -2893,7 +2937,8 @@ export function useDesktopState() {
     shouldAutoScrollOnNextAgentEvent = false
     persistedMessagesByThreadId.value = {}
     liveAgentMessagesByThreadId.value = {}
-    liveReasoningTextByThreadId.value = {}
+    liveTextSegmentByThreadId.value = {}
+    liveTextSegmentCountByThreadId.value = {}
     liveCommandsByThreadId.value = {}
     turnActivityByThreadId.value = {}
     turnSummaryByThreadId.value = {}

@@ -235,13 +235,6 @@
           <div class="message-stack">
             <article class="live-overlay-inline" aria-live="polite">
               <p class="live-overlay-label">{{ liveOverlay.activityLabel }}</p>
-              <p
-                v-if="liveOverlay.reasoningText"
-                class="live-overlay-reasoning"
-                ref="liveOverlayReasoningRef"
-              >
-                {{ liveOverlay.reasoningText }}
-              </p>
               <p v-if="liveOverlay.errorText" class="live-overlay-error">{{ liveOverlay.errorText }}</p>
             </article>
           </div>
@@ -366,7 +359,6 @@ const emit = defineEmits<{
 
 const conversationListRef = ref<HTMLElement | null>(null)
 const bottomAnchorRef = ref<HTMLElement | null>(null)
-const liveOverlayReasoningRef = ref<HTMLElement | null>(null)
 const modalImageUrl = ref('')
 const toolQuestionAnswers = ref<Record<string, string>>({})
 const toolQuestionOtherAnswers = ref<Record<string, string>>({})
@@ -941,21 +933,6 @@ function closeImageModal(): void {
   modalImageUrl.value = ''
 }
 
-function alignLiveOverlayReasoningToBottom(): void {
-  const reasoning = liveOverlayReasoningRef.value
-  if (!reasoning) return
-  reasoning.scrollTop = reasoning.scrollHeight
-}
-
-watch(
-  () => props.liveOverlay?.reasoningText,
-  async (reasoningText) => {
-    if (!reasoningText) return
-    await nextTick()
-    alignLiveOverlayReasoningToBottom()
-  },
-)
-
 onBeforeUnmount(() => {
   if (scrollRestoreFrame) {
     cancelAnimationFrame(scrollRestoreFrame)
@@ -1076,20 +1053,6 @@ onBeforeUnmount(() => {
 
 .live-overlay-label {
   @apply m-0 text-sm leading-5 font-medium text-zinc-600;
-}
-
-.live-overlay-reasoning {
-  @apply m-0 text-sm leading-5 text-zinc-500 whitespace-pre-wrap;
-  display: block;
-  max-height: calc(1.25rem * 5);
-  overflow: auto;
-  scrollbar-width: none;
-  mask-image: linear-gradient(to top, black 75%, transparent 100%);
-  -webkit-mask-image: linear-gradient(to top, black 75%, transparent 100%);
-}
-
-.live-overlay-reasoning::-webkit-scrollbar {
-  display: none;
 }
 
 .live-overlay-error {
