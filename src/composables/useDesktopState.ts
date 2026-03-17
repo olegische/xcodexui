@@ -24,10 +24,12 @@ import {
   type RpcNotification,
   type SkillInfo,
 } from '../api/codexGateway'
+import { IS_WASM_RUNTIME } from '../config/runtime'
 import type {
   CommandExecutionData,
   ReasoningEffort,
   ThreadScrollState,
+  UiFileAttachment,
   UiLiveOverlay,
   UiMessage,
   UiProjectGroup,
@@ -338,7 +340,24 @@ function normalizeMessageText(value: string): string {
   return value.replace(/\s+/gu, ' ').trim()
 }
 
+function areFileAttachmentsEqual(first?: UiFileAttachment[], second?: UiFileAttachment[]): boolean {
+  if (!first && !second) return true
+  if (!first || !second) return false
+  if (first.length !== second.length) return false
+  for (let index = 0; index < first.length; index += 1) {
+    if (first[index]?.label !== second[index]?.label) return false
+    if (first[index]?.path !== second[index]?.path) return false
+  }
+  return true
+}
+
 function removeRedundantLiveAgentMessages(previous: UiMessage[], incoming: UiMessage[]): UiMessage[] {
+  const incomingAssistantIds = new Set(
+    incoming
+      .filter((message) => message.role === 'assistant')
+      .map((message) => message.id)
+      .filter((id) => id.length > 0),
+  )
   const incomingAssistantTexts = new Set(
     incoming
       .filter((message) => message.role === 'assistant')
@@ -346,12 +365,13 @@ function removeRedundantLiveAgentMessages(previous: UiMessage[], incoming: UiMes
       .filter((text) => text.length > 0),
   )
 
-  if (incomingAssistantTexts.size === 0) {
+  if (incomingAssistantIds.size === 0 && incomingAssistantTexts.size === 0) {
     return previous
   }
 
   const next = previous.filter((message) => {
     if (message.messageType !== 'agentMessage.live') return true
+    if (incomingAssistantIds.has(message.id)) return false
     const normalized = normalizeMessageText(message.text)
     if (normalized.length === 0) return false
     return !incomingAssistantTexts.has(normalized)
@@ -722,14 +742,57 @@ export function useDesktopState() {
       errorText,
     }
   })
+  const selectedPendingUserMessage = computed<UiMessage | null>(() => {
+    const threadId = selectedThreadId.value
+    if (!threadId) return null
+
+    const pending = pendingTurnRequestByThreadId.value[threadId]
+    if (!pending) return null
+
+    const persisted = persistedMessagesByThreadId.value[threadId] ?? []
+    const liveAgent = liveAgentMessagesByThreadId.value[threadId] ?? []
+    const liveCommands = liveCommandsByThreadId.value[threadId] ?? []
+    const latestPersistedUserMessage = [...persisted].reverse().find((message) => message.role === 'user')
+
+    const pendingAttachments = pending.fileAttachments.map((file) => ({
+      label: file.label,
+      path: file.path,
+    }))
+
+    if (
+      latestPersistedUserMessage &&
+      latestPersistedUserMessage.text === pending.text &&
+      areStringArraysEqual(latestPersistedUserMessage.images, pending.imageUrls) &&
+      areFileAttachmentsEqual(latestPersistedUserMessage.fileAttachments, pendingAttachments)
+    ) {
+      return null
+    }
+
+    const hasCurrentTurnLiveArtifacts = liveAgent.length > 0 || liveCommands.length > 0
+    if (!hasCurrentTurnLiveArtifacts && inProgressById.value[threadId] !== true) {
+      return null
+    }
+
+    return {
+      id: `pending-user:${threadId}`,
+      role: 'user',
+      text: pending.text,
+      images: pending.imageUrls.length > 0 ? [...pending.imageUrls] : undefined,
+      fileAttachments: pendingAttachments.length > 0 ? pendingAttachments : undefined,
+      messageType: 'userMessage.pending',
+    }
+  })
   const messages = computed<UiMessage[]>(() => {
     const threadId = selectedThreadId.value
     if (!threadId) return []
 
     const persisted = persistedMessagesByThreadId.value[threadId] ?? []
+    const pendingUserMessage = selectedPendingUserMessage.value
     const liveAgent = liveAgentMessagesByThreadId.value[threadId] ?? []
     const liveCommands = liveCommandsByThreadId.value[threadId] ?? []
-    const combined = [...persisted, ...liveCommands, ...liveAgent]
+    const combined = pendingUserMessage
+      ? [...persisted, pendingUserMessage, ...liveCommands, ...liveAgent]
+      : [...persisted, ...liveCommands, ...liveAgent]
 
     const summary = turnSummaryByThreadId.value[threadId]
     if (!summary) return combined
@@ -1898,6 +1961,7 @@ export function useDesktopState() {
   }
 
   async function hydrateWorkspaceRootsStateIfNeeded(groups: UiProjectGroup[]): Promise<void> {
+    if (IS_WASM_RUNTIME) return
     if (hasHydratedWorkspaceRootsState) return
     hasHydratedWorkspaceRootsState = true
 
@@ -2061,6 +2125,10 @@ export function useDesktopState() {
   }
 
   async function refreshSkills(): Promise<void> {
+    if (IS_WASM_RUNTIME) {
+      installedSkills.value = []
+      return
+    }
     try {
       const cwds = sourceGroups.value.flatMap((g) => g.threads.map((t) => t.cwd)).filter(Boolean)
       installedSkills.value = await getSkillsList(cwds.length > 0 ? [...new Set(cwds)] : undefined)
@@ -2494,6 +2562,7 @@ export function useDesktopState() {
   }
 
   async function persistProjectOrderToWorkspaceRoots(): Promise<void> {
+    if (IS_WASM_RUNTIME) return
     try {
       const rootsState = await getWorkspaceRootsState()
       const rootByProjectName = new Map<string, string>()

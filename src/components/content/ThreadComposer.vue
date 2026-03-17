@@ -1,7 +1,7 @@
 <template>
   <form class="thread-composer" @submit.prevent="onSubmit('steer')">
     <div class="thread-composer-shell" :class="{ 'thread-composer-shell--no-top-radius': hasQueueAbove }">
-      <div v-if="selectedImages.length > 0" class="thread-composer-attachments">
+      <div v-if="enableAttachments && selectedImages.length > 0" class="thread-composer-attachments">
         <div v-for="image in selectedImages" :key="image.id" class="thread-composer-attachment">
           <img class="thread-composer-attachment-image" :src="image.url" :alt="image.name || 'Selected image'" />
           <button
@@ -16,7 +16,7 @@
         </div>
       </div>
 
-      <div v-if="fileAttachments.length > 0" class="thread-composer-file-chips">
+      <div v-if="enableAttachments && fileAttachments.length > 0" class="thread-composer-file-chips">
         <span v-for="att in fileAttachments" :key="att.fsPath" class="thread-composer-file-chip">
           <IconTablerFilePencil class="thread-composer-file-chip-icon" />
           <span class="thread-composer-file-chip-name" :title="att.fsPath">{{ att.label }}</span>
@@ -30,7 +30,7 @@
         </span>
       </div>
 
-      <div v-if="selectedSkills.length > 0" class="thread-composer-skill-chips">
+      <div v-if="enableSkills && selectedSkills.length > 0" class="thread-composer-skill-chips">
         <span v-for="skill in selectedSkills" :key="skill.path" class="thread-composer-skill-chip">
           <span class="thread-composer-skill-chip-name">{{ skill.name }}</span>
           <button
@@ -43,7 +43,7 @@
       </div>
 
       <div class="thread-composer-input-wrap">
-        <div v-if="isFileMentionOpen" class="thread-composer-file-mentions">
+        <div v-if="enableFileMentions && isFileMentionOpen" class="thread-composer-file-mentions">
           <template v-if="fileMentionSuggestions.length > 0">
             <button
               v-for="(item, index) in fileMentionSuggestions"
@@ -80,6 +80,7 @@
           @keydown="onInputKeydown"
         />
         <ComposerSkillPicker
+          v-if="enableSkills"
           :skills="skillOptions"
           :visible="isSlashMenuOpen"
           :anchor-bottom="44"
@@ -90,7 +91,7 @@
       </div>
 
       <div class="thread-composer-controls">
-        <div ref="attachMenuRootRef" class="thread-composer-attach">
+        <div v-if="enableAttachments" ref="attachMenuRootRef" class="thread-composer-attach">
           <button
             class="thread-composer-attach-trigger"
             type="button"
@@ -126,12 +127,15 @@
           :model-value="selectedModel"
           :options="modelOptions"
           placeholder="Model"
+          menu-title="Select model"
+          :show-selected-check="true"
           open-direction="up"
           :disabled="disabled || !activeThreadId || models.length === 0 || isTurnInProgress"
           @update:model-value="onModelSelect"
         />
 
         <ComposerSearchDropdown
+          v-if="enableSkills"
           class="thread-composer-control"
           :options="skillDropdownOptions"
           :selected-values="selectedSkillPaths"
@@ -147,6 +151,7 @@
           :model-value="selectedReasoningEffort"
           :options="reasoningOptions"
           placeholder="Thinking"
+          :show-selected-check="true"
           open-direction="up"
           :disabled="disabled || !activeThreadId || isTurnInProgress"
           @update:model-value="onReasoningEffortSelect"
@@ -154,7 +159,7 @@
 
         <div class="thread-composer-actions">
           <button
-            v-if="isDictationSupported && !isTurnInProgress"
+            v-if="enableDictation && isDictationSupported && !isTurnInProgress"
             class="thread-composer-mic"
             :class="{ 'thread-composer-mic--active': dictationState !== 'idle' }"
             type="button"
@@ -195,6 +200,7 @@
       </div>
     </div>
     <input
+      v-if="enableAttachments"
       ref="photoLibraryInputRef"
       class="thread-composer-hidden-input"
       type="file"
@@ -203,6 +209,7 @@
       @change="onPhotoLibraryChange"
     />
     <input
+      v-if="enableAttachments"
       ref="cameraCaptureInputRef"
       class="thread-composer-hidden-input"
       type="file"
@@ -242,6 +249,10 @@ const props = defineProps<{
   hasQueueAbove?: boolean
   sendWithEnter?: boolean
   inProgressSubmitMode?: 'steer' | 'queue'
+  enableSkills?: boolean
+  enableFileMentions?: boolean
+  enableAttachments?: boolean
+  enableDictation?: boolean
 }>()
 
 export type FileAttachment = { label: string; path: string; fsPath: string }
@@ -301,6 +312,10 @@ const reasoningOptions: Array<{ value: ReasoningEffort; label: string }> = [
 const modelOptions = computed(() =>
   props.models.map((modelId) => ({ value: modelId, label: modelId })),
 )
+const enableSkills = computed(() => props.enableSkills !== false)
+const enableFileMentions = computed(() => props.enableFileMentions !== false)
+const enableAttachments = computed(() => props.enableAttachments !== false)
+const enableDictation = computed(() => props.enableDictation !== false)
 
 const skillOptions = computed<SkillItem[]>(() => props.skills ?? [])
 const selectedSkillPaths = computed(() => selectedSkills.value.map((s) => s.path))
@@ -315,7 +330,10 @@ const skillDropdownOptions = computed(() =>
 const canSubmit = computed(() => {
   if (props.disabled) return false
   if (!props.activeThreadId) return false
-  return draft.value.trim().length > 0 || selectedImages.value.length > 0 || fileAttachments.value.length > 0
+  return draft.value.trim().length > 0 || (
+    enableAttachments.value &&
+    (selectedImages.value.length > 0 || fileAttachments.value.length > 0)
+  )
 })
 const isInteractionDisabled = computed(() => props.disabled || !props.activeThreadId)
 const inProgressMode = computed<'steer' | 'queue'>(() =>
@@ -323,7 +341,15 @@ const inProgressMode = computed<'steer' | 'queue'>(() =>
 )
 
 const placeholderText = computed(() =>
-  props.activeThreadId ? 'Type a message... (@ for files, / for skills)' : 'Select a thread to send a message',
+  props.activeThreadId
+    ? enableSkills.value && enableFileMentions.value
+      ? 'Type a message... (@ for files, / for skills)'
+      : enableFileMentions.value
+        ? 'Type a message... (@ for files)'
+        : enableSkills.value
+          ? 'Type a message... (/ for skills)'
+          : 'Type a message...'
+    : 'Select a thread to send a message',
 )
 
 function onSubmit(mode: 'steer' | 'queue' = 'steer'): void {
@@ -363,15 +389,18 @@ function onReasoningEffortSelect(value: string): void {
 }
 
 function toggleAttachMenu(): void {
+  if (!enableAttachments.value) return
   if (isInteractionDisabled.value) return
   isAttachMenuOpen.value = !isAttachMenuOpen.value
 }
 
 function triggerPhotoLibrary(): void {
+  if (!enableAttachments.value) return
   photoLibraryInputRef.value?.click()
 }
 
 function triggerCameraCapture(): void {
+  if (!enableAttachments.value) return
   cameraCaptureInputRef.value?.click()
 }
 
@@ -388,6 +417,7 @@ function removeFileAttachment(fsPath: string): void {
 }
 
 function addFileAttachment(filePath: string): void {
+  if (!enableAttachments.value) return
   const normalized = filePath.replace(/\\/g, '/')
   if (fileAttachments.value.some((a) => a.fsPath === normalized)) return
   const parts = normalized.split('/').filter(Boolean)
@@ -401,6 +431,7 @@ function isImageFile(file: File): boolean {
 }
 
 function addFiles(files: FileList | null): void {
+  if (!enableAttachments.value) return
   if (!files || files.length === 0) return
   for (const file of Array.from(files)) {
     if (isImageFile(file)) {
@@ -427,6 +458,7 @@ function clearInputValue(inputRefEl: HTMLInputElement | null): void {
 }
 
 function onPhotoLibraryChange(event: Event): void {
+  if (!enableAttachments.value) return
   const input = event.target as HTMLInputElement | null
   addFiles(input?.files ?? null)
   clearInputValue(input)
@@ -434,6 +466,7 @@ function onPhotoLibraryChange(event: Event): void {
 }
 
 function onCameraCaptureChange(event: Event): void {
+  if (!enableAttachments.value) return
   const input = event.target as HTMLInputElement | null
   addFiles(input?.files ?? null)
   clearInputValue(input)
@@ -442,11 +475,15 @@ function onCameraCaptureChange(event: Event): void {
 
 function onInputChange(): void {
   const text = draft.value
-  const shouldShowSlashMenu = text.startsWith('/')
+  const shouldShowSlashMenu = enableSkills.value && text.startsWith('/')
   if (shouldShowSlashMenu !== isSlashMenuOpen.value) {
     isSlashMenuOpen.value = shouldShowSlashMenu
   }
-  updateFileMentionState()
+  if (enableFileMentions.value) {
+    updateFileMentionState()
+    return
+  }
+  closeFileMention()
 }
 
 function onInputKeydown(event: KeyboardEvent): void {
@@ -520,6 +557,10 @@ function closeFileMention(): void {
 }
 
 function updateFileMentionState(): void {
+  if (!enableFileMentions.value) {
+    closeFileMention()
+    return
+  }
   const input = inputRef.value
   if (!input) {
     closeFileMention()
@@ -543,7 +584,7 @@ function updateFileMentionState(): void {
 }
 
 async function queueFileMentionSearch(): Promise<void> {
-  if (!isFileMentionOpen.value) return
+  if (!enableFileMentions.value || !isFileMentionOpen.value) return
   const cwd = (props.cwd ?? '').trim()
   if (!cwd) {
     fileMentionSuggestions.value = []
@@ -621,6 +662,7 @@ function isMarkdownFile(path: string): boolean {
 }
 
 function onSlashSkillSelect(skill: SkillItem): void {
+  if (!enableSkills.value) return
   if (!selectedSkills.value.some((s) => s.path === skill.path)) {
     selectedSkills.value = [...selectedSkills.value, skill]
   }
@@ -630,6 +672,7 @@ function onSlashSkillSelect(skill: SkillItem): void {
 }
 
 function onSkillDropdownToggle(path: string, checked: boolean): void {
+  if (!enableSkills.value) return
   if (checked) {
     const skill = (props.skills ?? []).find((s) => s.path === path)
     if (skill && !selectedSkills.value.some((s) => s.path === path)) {
@@ -659,6 +702,16 @@ onBeforeUnmount(() => {
     clearTimeout(fileMentionDebounceTimer)
   }
 })
+
+watch(
+  () => enableAttachments.value,
+  (enabled) => {
+    if (enabled) return
+    selectedImages.value = []
+    fileAttachments.value = []
+    isAttachMenuOpen.value = false
+  },
+)
 
 watch(
   () => props.activeThreadId,

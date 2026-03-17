@@ -20,7 +20,11 @@
             <button class="thread-main-button" type="button" @click="onSelect(thread.id)">
               <span class="thread-row-title-wrap">
                 <span class="thread-row-title">{{ thread.title }}</span>
-                <IconTablerGitFork v-if="thread.hasWorktree" class="thread-row-worktree-icon" title="Worktree thread" />
+                <IconTablerGitFork
+                  v-if="showWorktreeIndicators && thread.hasWorktree"
+                  class="thread-row-worktree-icon"
+                  title="Worktree thread"
+                />
               </span>
             </button>
             <template #right>
@@ -118,7 +122,11 @@
           <button class="thread-main-button" type="button" @click="onSelect(thread.id)">
             <span class="thread-row-title-wrap">
               <span class="thread-row-title">{{ thread.title }}</span>
-              <IconTablerGitFork v-if="thread.hasWorktree" class="thread-row-worktree-icon" title="Worktree thread" />
+              <IconTablerGitFork
+                v-if="showWorktreeIndicators && thread.hasWorktree"
+                class="thread-row-worktree-icon"
+                title="Worktree thread"
+              />
             </span>
           </button>
           <template #right>
@@ -202,7 +210,12 @@
 
                   <div v-if="isProjectMenuOpen(group.projectName)" class="project-menu-panel" @click.stop>
                     <template v-if="projectMenuMode === 'actions'">
-                      <button class="project-menu-item" type="button" @click="onBrowseProjectFiles(group.projectName)">
+                      <button
+                        v-if="allowProjectBrowse"
+                        class="project-menu-item"
+                        type="button"
+                        @click="onBrowseProjectFiles(group.projectName)"
+                      >
                         Browse files
                       </button>
                       <button class="project-menu-item" type="button" @click="openRenameProjectMenu(group.projectName)">
@@ -264,7 +277,11 @@
                 <button class="thread-main-button" type="button" @click="onSelect(thread.id)">
                   <span class="thread-row-title-wrap">
                     <span class="thread-row-title">{{ thread.title }}</span>
-                    <IconTablerGitFork v-if="thread.hasWorktree" class="thread-row-worktree-icon" title="Worktree thread" />
+                    <IconTablerGitFork
+                      v-if="showWorktreeIndicators && thread.hasWorktree"
+                      class="thread-row-worktree-icon"
+                      title="Worktree thread"
+                    />
                   </span>
                 </button>
                 <template #right>
@@ -372,6 +389,8 @@ const props = defineProps<{
   isLoading: boolean
   searchQuery: string
   searchMatchedThreadIds: string[] | null
+  allowProjectBrowse?: boolean
+  showWorktreeIndicators?: boolean
 }>()
 
 const emit = defineEmits<{

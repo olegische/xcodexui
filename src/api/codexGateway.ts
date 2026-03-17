@@ -7,6 +7,8 @@ import {
   subscribeRpcNotifications,
   type RpcNotification,
 } from './codexRpcClient'
+import { IS_WASM_RUNTIME } from '../config/runtime'
+import * as wasmGateway from './wasmCodexGateway'
 import type {
   ConfigReadResponse,
   ModelListResponse,
@@ -92,6 +94,9 @@ async function getThreadDetailV2(threadId: string): Promise<{ messages: UiMessag
 }
 
 export async function getThreadGroups(): Promise<UiProjectGroup[]> {
+  if (IS_WASM_RUNTIME) {
+    return await wasmGateway.getThreadGroups()
+  }
   try {
     return await getThreadGroupsV2()
   } catch (error) {
@@ -100,6 +105,9 @@ export async function getThreadGroups(): Promise<UiProjectGroup[]> {
 }
 
 export async function getThreadMessages(threadId: string): Promise<UiMessage[]> {
+  if (IS_WASM_RUNTIME) {
+    return await wasmGateway.getThreadMessages(threadId)
+  }
   try {
     return await getThreadMessagesV2(threadId)
   } catch (error) {
@@ -108,6 +116,9 @@ export async function getThreadMessages(threadId: string): Promise<UiMessage[]> 
 }
 
 export async function getThreadDetail(threadId: string): Promise<{ messages: UiMessage[]; inProgress: boolean }> {
+  if (IS_WASM_RUNTIME) {
+    return await wasmGateway.getThreadDetail(threadId)
+  }
   try {
     return await getThreadDetailV2(threadId)
   } catch (error) {
@@ -124,6 +135,9 @@ export async function getNotificationCatalog(): Promise<string[]> {
 }
 
 export function subscribeCodexNotifications(onNotification: (value: RpcNotification) => void): () => void {
+  if (IS_WASM_RUNTIME) {
+    return wasmGateway.subscribeCodexNotifications(onNotification)
+  }
   return subscribeRpcNotifications(onNotification)
 }
 
@@ -133,6 +147,9 @@ export async function replyToServerRequest(
   id: number,
   payload: { result?: unknown; error?: { code?: number; message: string } },
 ): Promise<void> {
+  if (IS_WASM_RUNTIME) {
+    return await wasmGateway.replyToServerRequest(id, payload)
+  }
   await respondServerRequest({
     id,
     ...payload,
@@ -140,22 +157,37 @@ export async function replyToServerRequest(
 }
 
 export async function getPendingServerRequests(): Promise<unknown[]> {
+  if (IS_WASM_RUNTIME) {
+    return await wasmGateway.getPendingServerRequests()
+  }
   return fetchPendingServerRequests()
 }
 
 export async function resumeThread(threadId: string): Promise<void> {
+  if (IS_WASM_RUNTIME) {
+    return await wasmGateway.resumeThread(threadId)
+  }
   await callRpc('thread/resume', { threadId })
 }
 
 export async function archiveThread(threadId: string): Promise<void> {
+  if (IS_WASM_RUNTIME) {
+    return await wasmGateway.archiveThread(threadId)
+  }
   await callRpc('thread/archive', { threadId })
 }
 
 export async function renameThread(threadId: string, threadName: string): Promise<void> {
+  if (IS_WASM_RUNTIME) {
+    return await wasmGateway.renameThread(threadId, threadName)
+  }
   await callRpc('thread/name/set', { threadId, name: threadName })
 }
 
 export async function rollbackThread(threadId: string, numTurns: number): Promise<UiMessage[]> {
+  if (IS_WASM_RUNTIME) {
+    return await wasmGateway.rollbackThread(threadId, numTurns)
+  }
   const payload = await callRpc<ThreadReadResponse>('thread/rollback', { threadId, numTurns })
   return normalizeThreadMessagesV2(payload)
 }
@@ -175,6 +207,9 @@ function normalizeThreadIdFromPayload(payload: unknown): string {
 }
 
 export async function startThread(cwd?: string, model?: string): Promise<string> {
+  if (IS_WASM_RUNTIME) {
+    return await wasmGateway.startThread(cwd, model)
+  }
   try {
     const params: Record<string, unknown> = {}
     if (typeof cwd === 'string' && cwd.trim().length > 0) {
@@ -217,6 +252,9 @@ export async function startThreadTurn(
   skills?: Array<{ name: string; path: string }>,
   fileAttachments: FileAttachmentParam[] = [],
 ): Promise<void> {
+  if (IS_WASM_RUNTIME) {
+    return await wasmGateway.startThreadTurn(threadId, text, imageUrls, model, effort, skills, fileAttachments)
+  }
   try {
     const finalText = buildTextWithAttachments(text, fileAttachments)
     const input: Array<Record<string, unknown>> = [{ type: 'text', text: finalText }]
@@ -253,6 +291,9 @@ export async function startThreadTurn(
 }
 
 export async function interruptThreadTurn(threadId: string, turnId?: string): Promise<void> {
+  if (IS_WASM_RUNTIME) {
+    return await wasmGateway.interruptThreadTurn(threadId, turnId)
+  }
   const normalizedThreadId = threadId.trim()
   const normalizedTurnId = turnId?.trim() || ''
   if (!normalizedThreadId) return
@@ -268,10 +309,16 @@ export async function interruptThreadTurn(threadId: string, turnId?: string): Pr
 }
 
 export async function setDefaultModel(model: string): Promise<void> {
+  if (IS_WASM_RUNTIME) {
+    return await wasmGateway.setDefaultModel(model)
+  }
   await callRpc('setDefaultModel', { model })
 }
 
 export async function getAvailableModelIds(): Promise<string[]> {
+  if (IS_WASM_RUNTIME) {
+    return await wasmGateway.getAvailableModelIds()
+  }
   const payload = await callRpc<ModelListResponse>('model/list', {})
   const ids: string[] = []
   for (const row of payload.data) {
@@ -283,6 +330,9 @@ export async function getAvailableModelIds(): Promise<string[]> {
 }
 
 export async function getCurrentModelConfig(): Promise<CurrentModelConfig> {
+  if (IS_WASM_RUNTIME) {
+    return await wasmGateway.getCurrentModelConfig()
+  }
   const payload = await callRpc<ConfigReadResponse>('config/read', {})
   const model = payload.config.model ?? ''
   const reasoningEffort = normalizeReasoningEffort(payload.config.model_reasoning_effort)
@@ -463,6 +513,9 @@ export async function searchThreads(
   query: string,
   limit = 200,
 ): Promise<ThreadSearchResult> {
+  if (IS_WASM_RUNTIME) {
+    return await wasmGateway.searchThreads(query, limit)
+  }
   const response = await fetch('/codex-api/thread-search', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -486,6 +539,9 @@ function getErrorMessageFromPayload(payload: unknown, fallback: string): string 
 export type ThreadTitleCache = { titles: Record<string, string>; order: string[] }
 
 export async function getThreadTitleCache(): Promise<ThreadTitleCache> {
+  if (IS_WASM_RUNTIME) {
+    return await wasmGateway.getThreadTitleCache()
+  }
   try {
     const response = await fetch('/codex-api/thread-titles')
     if (!response.ok) return { titles: {}, order: [] }
@@ -497,6 +553,9 @@ export async function getThreadTitleCache(): Promise<ThreadTitleCache> {
 }
 
 export async function persistThreadTitle(id: string, title: string): Promise<void> {
+  if (IS_WASM_RUNTIME) {
+    return await wasmGateway.persistThreadTitle(id, title)
+  }
   try {
     await fetch('/codex-api/thread-titles', {
       method: 'PUT',
@@ -509,6 +568,9 @@ export async function persistThreadTitle(id: string, title: string): Promise<voi
 }
 
 export async function generateThreadTitle(prompt: string, cwd: string | null): Promise<string> {
+  if (IS_WASM_RUNTIME) {
+    return await wasmGateway.generateThreadTitle(prompt, cwd)
+  }
   try {
     const result = await callRpc<{ title?: string }>('generate-thread-title', { prompt, cwd })
     return result.title?.trim() ?? ''
@@ -539,6 +601,9 @@ type SkillsListResponseEntry = {
 }
 
 export async function getSkillsList(cwds?: string[]): Promise<SkillInfo[]> {
+  if (IS_WASM_RUNTIME) {
+    return await wasmGateway.getSkillsList(cwds)
+  }
   try {
     const params: Record<string, unknown> = {}
     if (cwds && cwds.length > 0) params.cwds = cwds
@@ -565,6 +630,10 @@ export async function getSkillsList(cwds?: string[]): Promise<SkillInfo[]> {
 }
 
 export async function uploadFile(file: File): Promise<string | null> {
+  if (IS_WASM_RUNTIME) {
+    void file
+    throw new Error('File attachments are disabled in wasm mode.')
+  }
   try {
     const form = new FormData()
     form.append('file', file)

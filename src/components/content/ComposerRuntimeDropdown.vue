@@ -36,6 +36,7 @@ type RuntimeMode = 'local' | 'worktree'
 
 const props = defineProps<{
   modelValue: RuntimeMode
+  includeWorktree?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -44,12 +45,17 @@ const emit = defineEmits<{
 
 const rootRef = ref<HTMLElement | null>(null)
 const isOpen = ref(false)
-const options = [
-  { value: 'local' as const, label: 'Local project', icon: IconTablerFolder },
-  { value: 'worktree' as const, label: 'New worktree', icon: IconTablerGitFork },
-]
+const options = computed<Array<{ value: RuntimeMode; label: string; icon: typeof IconTablerFolder }>>(() => {
+  const rows: Array<{ value: RuntimeMode; label: string; icon: typeof IconTablerFolder }> = [
+    { value: 'local', label: 'Local project', icon: IconTablerFolder },
+  ]
+  if (props.includeWorktree !== false) {
+    rows.push({ value: 'worktree', label: 'New worktree', icon: IconTablerGitFork })
+  }
+  return rows
+})
 
-const selectedOption = computed(() => options.find((option) => option.value === props.modelValue) ?? options[0])
+const selectedOption = computed(() => options.value.find((option) => option.value === props.modelValue) ?? options.value[0])
 
 function onSelect(value: RuntimeMode): void {
   emit('update:modelValue', value)

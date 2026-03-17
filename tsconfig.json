@@ -9,7 +9,24 @@
     "isolatedModules": true,
     "esModuleInterop": true,
     "lib": ["ES2020", "DOM", "DOM.Iterable"],
-    "types": ["vite/client", "node"]
+    "types": ["vite/client", "node"],
+    "baseUrl": ".",
+    "paths": {
+      "@browser-codex/wasm-browser-host/bootstrap": ["../browser-codex/codex-rs/wasm/ts/browser-host/src/bootstrap.ts"],
+      "@browser-codex/wasm-browser-host/runtime-host": ["../browser-codex/codex-rs/wasm/ts/browser-host/src/runtime-host.ts"],
+      "@browser-codex/wasm-browser-host": ["../browser-codex/codex-rs/wasm/ts/browser-host/src/index.ts"],
+      "@browser-codex/wasm-browser-host/*": ["../browser-codex/codex-rs/wasm/ts/browser-host/src/*"],
+      "@browser-codex/wasm-browser-codex-runtime/types": ["../browser-codex/codex-rs/wasm/ts/browser-codex-runtime/src/types.ts"],
+      "@browser-codex/wasm-browser-codex-runtime": ["../browser-codex/codex-rs/wasm/ts/browser-codex-runtime/src/index.ts"],
+      "@browser-codex/wasm-browser-codex-runtime/*": ["../browser-codex/codex-rs/wasm/ts/browser-codex-runtime/src/*"],
+      "@browser-codex/wasm-model-transport": ["../browser-codex/codex-rs/wasm/ts/model-transport/src/index.ts"],
+      "@browser-codex/wasm-model-transport/*": ["../browser-codex/codex-rs/wasm/ts/model-transport/src/*"],
+      "@browser-codex/wasm-runtime-core/types": ["../browser-codex/codex-rs/wasm/ts/runtime-core/src/types.ts"],
+      "@browser-codex/wasm-runtime-core": ["../browser-codex/codex-rs/wasm/ts/runtime-core/src/index.ts"],
+      "@browser-codex/wasm-runtime-core/*": ["../browser-codex/codex-rs/wasm/ts/runtime-core/src/*"],
+      "@browser-codex/app-webui-runtime/*": ["../browser-codex/codex-rs/wasm/apps/webui/src/runtime/*"]
+    }
   },
-  "include": ["src/**/*.ts", "src/**/*.vue", "vite.config.ts"]
+  "include": ["src/**/*.ts", "src/**/*.vue", "vite.config.ts"],
+  "exclude": ["src/integrations/**"]
 }

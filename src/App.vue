@@ -48,7 +48,7 @@
           </div>
 
           <button
-            v-if="!isSidebarCollapsed"
+            v-if="!isWasmRuntime && !isSidebarCollapsed"
             class="sidebar-skills-link"
             :class="{ 'is-active': isSkillsRoute }"
             type="button"
@@ -62,6 +62,8 @@
             :selected-thread-id="selectedThreadId" :is-loading="isLoadingThreads"
             :search-query="sidebarSearchQuery"
             :search-matched-thread-ids="serverMatchedThreadIds"
+            :allow-project-browse="!isWasmRuntime"
+            :show-worktree-indicators="!isWasmRuntime"
             @select="onSelectThread"
             @archive="onArchiveThread" @start-new-thread="onStartNewThread" @rename-project="onRenameProject"
             @browse-project-files="onBrowseProjectFiles"
@@ -84,6 +86,10 @@
                 <span class="sidebar-settings-label">Appearance</span>
                 <span class="sidebar-settings-value">{{ darkMode === 'system' ? 'System' : darkMode === 'dark' ? 'Dark' : 'Light' }}</span>
               </button>
+              <button v-if="isWasmRuntime" class="sidebar-settings-row" type="button" @click="openRuntimeSettings">
+                <span class="sidebar-settings-label">Runtime</span>
+                <IconTablerChevronRight class="sidebar-settings-row-chevron" />
+              </button>
             </div>
           </Transition>
           <button class="sidebar-settings-button" type="button" @click="isSettingsOpen = !isSettingsOpen">
@@ -96,7 +102,7 @@
 
     <template #content>
       <section class="content-root">
-        <ContentHeader :title="contentTitle">
+        <ContentHeader v-if="!isRuntimeSettingsRoute" :title="contentTitle">
           <template #leading>
             <SidebarThreadControls
               v-if="isSidebarCollapsed || isMobile"
@@ -113,7 +119,110 @@
         </ContentHeader>
 
         <section class="content-body">
-          <template v-if="isSkillsRoute">
+          <template v-if="isRuntimeSettingsRoute">
+            <section class="runtime-settings-view">
+              <div class="runtime-settings-header">
+                <button class="runtime-settings-back" type="button" @click="goBackFromRuntimeSettings">
+                  <IconTablerChevronLeft class="runtime-settings-back-icon" />
+                  <span>Back to app</span>
+                </button>
+                <div class="runtime-settings-heading">
+                  <h2 class="runtime-settings-title">Runtime</h2>
+                  <p class="runtime-settings-subtitle">Browser-hosted Codex runtime configuration.</p>
+                </div>
+              </div>
+
+              <div class="settings-panel-card">
+                <div class="settings-form-grid">
+                  <label class="settings-form-row">
+                    <span class="settings-form-copy">
+                      <span class="settings-form-title">Status</span>
+                      <span class="settings-form-description">{{ derivedRuntimeStatus.detail }}</span>
+                    </span>
+                    <span class="settings-chip" :class="{ 'is-error': derivedRuntimeStatus.isError }">
+                      {{ derivedRuntimeStatus.label }}
+                    </span>
+                  </label>
+
+                  <label class="settings-form-row">
+                    <span class="settings-form-copy">
+                      <span class="settings-form-title">Provider</span>
+                      <span class="settings-form-description">Select the runtime transport.</span>
+                    </span>
+                    <select
+                      v-model="wasmSettingsDraft.transportMode"
+                      class="settings-select"
+                      @change="onWasmTransportModeChange(wasmSettingsDraft.transportMode)"
+                    >
+                      <option value="xrouter-browser">Browser runtime router</option>
+                      <option value="openai">OpenAI</option>
+                      <option value="openai-compatible">OpenAI-compatible</option>
+                    </select>
+                  </label>
+
+                  <label v-if="wasmSettingsDraft.transportMode === 'xrouter-browser'" class="settings-form-row">
+                    <span class="settings-form-copy">
+                      <span class="settings-form-title">Route</span>
+                      <span class="settings-form-description">Choose the provider route exposed by browser runtime.</span>
+                    </span>
+                    <select
+                      v-model="wasmSettingsDraft.xrouterProvider"
+                      class="settings-select"
+                      @change="onWasmXrouterProviderChange(wasmSettingsDraft.xrouterProvider)"
+                    >
+                      <option value="deepseek">DeepSeek</option>
+                      <option value="openai">OpenAI</option>
+                      <option value="openrouter">OpenRouter</option>
+                      <option value="zai">ZAI</option>
+                    </select>
+                  </label>
+
+                  <label class="settings-form-row is-input">
+                    <span class="settings-form-copy">
+                      <span class="settings-form-title">API key</span>
+                      <span class="settings-form-description">Stored in browser IndexedDB. OAuth is disabled.</span>
+                    </span>
+                    <input v-model="wasmSettingsDraft.apiKey" class="settings-input" type="password" placeholder="Paste API key" />
+                  </label>
+
+                  <label class="settings-form-row is-input">
+                    <span class="settings-form-copy">
+                      <span class="settings-form-title">Base URL</span>
+                      <span class="settings-form-description">Provider endpoint used by the runtime.</span>
+                    </span>
+                    <input v-model="wasmSettingsDraft.providerBaseUrl" class="settings-input" type="text" placeholder="https://..." />
+                  </label>
+
+                  <label class="settings-form-row is-input">
+                    <span class="settings-form-copy">
+                      <span class="settings-form-title">Model</span>
+                      <span class="settings-form-description">Default model id for new turns.</span>
+                    </span>
+                    <select v-if="runtimeModelOptions.length > 0" v-model="wasmSettingsDraft.model" class="settings-select">
+                      <option v-for="option in runtimeModelOptions" :key="option.value" :value="option.value">
+                        {{ option.label }}
+                      </option>
+                    </select>
+                    <input v-else v-model="wasmSettingsDraft.model" class="settings-input" type="text" placeholder="gpt-5 / deepseek-chat / ..." />
+                  </label>
+                </div>
+
+                <div class="settings-actions">
+                  <button class="settings-primary-action" type="button" :disabled="isSavingWasmSettings" @click="saveCurrentWasmRuntimeSettings">
+                    {{ isSavingWasmSettings ? 'Saving…' : 'Save runtime' }}
+                  </button>
+                  <button class="settings-secondary-action" type="button" :disabled="isSavingWasmSettings" @click="reloadRuntimeSettingsScreen">
+                    Reload
+                  </button>
+                </div>
+
+                <p v-if="wasmSettingsFeedback" class="settings-inline-note" :class="{ 'is-error': wasmSettingsFeedbackTone === 'error' }">
+                  {{ wasmSettingsFeedback }}
+                </p>
+              </div>
+            </section>
+          </template>
+          <template v-else-if="!isWasmRuntime && isSkillsRoute">
             <SkillsHub @skills-changed="onSkillsChanged" />
           </template>
           <template v-else-if="isHomeRoute">
@@ -123,19 +232,21 @@
                 <ComposerDropdown class="new-thread-folder-dropdown" :model-value="newThreadCwd"
                   :options="newThreadFolderOptions" placeholder="Choose folder"
                   :enable-search="true"
-                  search-placeholder="Quick search project"
-                  :show-add-action="true"
+                  :search-placeholder="isWasmRuntime ? 'Workspace path' : 'Quick search project'"
+                  :show-add-action="!isWasmRuntime"
                   add-action-label="+ Add new project"
                   :default-add-value="defaultNewProjectName"
                   add-placeholder="Project name or absolute path"
                   :disabled="false" @update:model-value="onSelectNewThreadFolder"
                   @add="onAddNewProject" />
                 <ComposerRuntimeDropdown
+                  v-if="!isWasmRuntime"
                   class="new-thread-runtime-dropdown"
                   v-model="newThreadRuntime"
+                  :include-worktree="!isWasmRuntime"
                 />
                 <div
-                  v-if="worktreeInitStatus.phase !== 'idle'"
+                  v-if="!isWasmRuntime && worktreeInitStatus.phase !== 'idle'"
                   class="worktree-init-status"
                   :class="{
                     'is-running': worktreeInitStatus.phase === 'running',
@@ -151,6 +262,10 @@
                   :cwd="composerCwd"
                 :models="availableModelIds" :selected-model="selectedModelId"
                 :selected-reasoning-effort="selectedReasoningEffort" :skills="installedSkills"
+                :enable-skills="!isWasmRuntime"
+                :enable-file-mentions="!isWasmRuntime"
+                :enable-attachments="!isWasmRuntime"
+                :enable-dictation="!isWasmRuntime"
                 :is-turn-in-progress="false"
                 :is-interrupting-turn="false" :send-with-enter="sendWithEnter" :in-progress-submit-mode="inProgressSendMode" @submit="onSubmitThreadMessage"
                 @update:selected-model="onSelectModel" @update:selected-reasoning-effort="onSelectReasoningEffort" />
@@ -164,6 +279,7 @@
                   :live-overlay="liveOverlay"
                   :pending-requests="selectedThreadServerRequests"
                   :is-turn-in-progress="isSelectedThreadInProgress"
+                  :allow-rollback="!isWasmRuntime"
                   :is-rolling-back="isRollingBack"
                   @update-scroll-state="onUpdateThreadScrollState"
                   @respond-server-request="onRespondServerRequest"
@@ -181,6 +297,10 @@
                   :models="availableModelIds"
                   :selected-model="selectedModelId" :selected-reasoning-effort="selectedReasoningEffort"
                   :skills="installedSkills"
+                  :enable-skills="!isWasmRuntime"
+                  :enable-file-mentions="!isWasmRuntime"
+                  :enable-attachments="!isWasmRuntime"
+                  :enable-dictation="!isWasmRuntime"
                   :is-turn-in-progress="isSelectedThreadInProgress" :is-interrupting-turn="isInterruptingTurn"
                   :has-queue-above="selectedThreadQueuedMessages.length > 0"
                   :send-with-enter="sendWithEnter" :in-progress-submit-mode="inProgressSendMode"
@@ -212,10 +332,23 @@ import ComposerRuntimeDropdown from './components/content/ComposerRuntimeDropdow
 import SkillsHub from './components/content/SkillsHub.vue'
 import SidebarThreadControls from './components/sidebar/SidebarThreadControls.vue'
 import IconTablerSearch from './components/icons/IconTablerSearch.vue'
+import IconTablerChevronLeft from './components/icons/IconTablerChevronLeft.vue'
+import IconTablerChevronRight from './components/icons/IconTablerChevronRight.vue'
 import IconTablerSettings from './components/icons/IconTablerSettings.vue'
 import IconTablerX from './components/icons/IconTablerX.vue'
 import { useDesktopState } from './composables/useDesktopState'
 import { useMobile } from './composables/useMobile'
+import { BROWSER_WORKSPACE_ROOT, IS_WASM_RUNTIME } from './config/runtime'
+import {
+  applyWasmTransportDefaults,
+  applyWasmXrouterProvider,
+  deriveWasmRuntimeStatus,
+  getWasmRuntimeStatus,
+  loadWasmRuntimeDraft,
+  saveWasmRuntimeDraft,
+  type WasmRuntimeDraft,
+  type WasmRuntimeStatus,
+} from './runtime/wasm/settings'
 import {
   createWorktree,
   getHomeDirectory,
@@ -225,10 +358,12 @@ import {
   searchThreads,
 } from './api/codexGateway'
 import type { ReasoningEffort, ThreadScrollState } from './types/codex'
+import type { DemoTransportMode, XrouterProvider } from '@browser-codex/app-webui-runtime/types'
 
 const SIDEBAR_COLLAPSED_STORAGE_KEY = 'codex-web-local.sidebar-collapsed.v1'
 const worktreeName = import.meta.env.VITE_WORKTREE_NAME ?? 'unknown'
 const appVersion = import.meta.env.VITE_APP_VERSION ?? 'unknown'
+const isWasmRuntime = IS_WASM_RUNTIME
 
 const {
   projectGroups,
@@ -297,6 +432,24 @@ let threadSearchTimer: ReturnType<typeof setTimeout> | null = null
 const defaultNewProjectName = ref('New Project (1)')
 const homeDirectory = ref('')
 const isSettingsOpen = ref(false)
+const wasmSettingsDraft = ref<WasmRuntimeDraft>({
+  transportMode: 'xrouter-browser',
+  providerDisplayName: 'DeepSeek via Browser Runtime',
+  providerBaseUrl: 'https://api.deepseek.com',
+  apiKey: '',
+  xrouterProvider: 'deepseek',
+  model: '',
+  modelReasoningEffort: 'medium',
+  personality: 'pragmatic',
+})
+const wasmRuntimeStatus = ref<WasmRuntimeStatus>({
+  label: 'Loading…',
+  detail: '',
+  isError: false,
+})
+const wasmSettingsFeedback = ref('')
+const wasmSettingsFeedbackTone = ref<'neutral' | 'error'>('neutral')
+const isSavingWasmSettings = ref(false)
 const SEND_WITH_ENTER_KEY = 'codex-web-local.send-with-enter.v1'
 const IN_PROGRESS_SEND_MODE_KEY = 'codex-web-local.in-progress-send-mode.v1'
 const DARK_MODE_KEY = 'codex-web-local.dark-mode.v1'
@@ -307,6 +460,10 @@ const darkMode = ref<'system' | 'light' | 'dark'>(loadDarkModePref())
 const routeThreadId = computed(() => {
   const rawThreadId = route.params.threadId
   return typeof rawThreadId === 'string' ? rawThreadId : ''
+})
+const runtimeSettingsTab = computed(() => {
+  const rawTab = route.params.tab
+  return typeof rawTab === 'string' ? rawTab : ''
 })
 
 const knownThreadIdSet = computed(() => {
@@ -320,7 +477,8 @@ const knownThreadIdSet = computed(() => {
 })
 
 const isHomeRoute = computed(() => route.name === 'home')
-const isSkillsRoute = computed(() => route.name === 'skills')
+const isSkillsRoute = computed(() => !isWasmRuntime && route.name === 'skills')
+const isRuntimeSettingsRoute = computed(() => route.name === 'settings' && runtimeSettingsTab.value === 'runtime')
 const contentTitle = computed(() => {
   if (isSkillsRoute.value) return 'Skills'
   if (isHomeRoute.value) return 'New thread'
@@ -341,12 +499,26 @@ const filteredMessages = computed(() =>
 )
 const liveOverlay = computed(() => selectedLiveOverlay.value)
 const composerThreadContextId = computed(() => (isHomeRoute.value ? '__new-thread__' : selectedThreadId.value))
+const runtimeModelOptions = computed(() =>
+  availableModelIds.value.map((modelId) => ({ value: modelId, label: modelId })),
+)
+const derivedRuntimeStatus = computed(() =>
+  deriveWasmRuntimeStatus({
+    providerName: wasmSettingsDraft.value.providerDisplayName,
+    apiKey: wasmSettingsDraft.value.apiKey,
+    model: wasmSettingsDraft.value.model,
+  }),
+)
 const composerCwd = computed(() => {
   if (isHomeRoute.value) return newThreadCwd.value.trim()
   return selectedThread.value?.cwd?.trim() ?? ''
 })
 const isSelectedThreadInProgress = computed(() => !isHomeRoute.value && selectedThread.value?.inProgress === true)
 const newThreadFolderOptions = computed(() => {
+  if (isWasmRuntime) {
+    return [{ value: BROWSER_WORKSPACE_ROOT, label: 'Workspace' }]
+  }
+
   const options: Array<{ value: string; label: string }> = []
   const seenCwds = new Set<string>()
 
@@ -387,6 +559,16 @@ onMounted(() => {
   applyDarkMode()
   darkModeMediaQuery?.addEventListener('change', applyDarkMode)
   void initialize()
+  if (isWasmRuntime) {
+    newThreadCwd.value = BROWSER_WORKSPACE_ROOT
+    defaultNewProjectName.value = 'Workspace'
+    workspaceRootOptionsState.value = {
+      order: [BROWSER_WORKSPACE_ROOT],
+      labels: { [BROWSER_WORKSPACE_ROOT]: 'Workspace' },
+    }
+    void refreshWasmRuntimeSettings()
+    return
+  }
   void loadHomeDirectory()
   void loadWorkspaceRootOptionsState()
   void refreshDefaultProjectName()
@@ -426,8 +608,114 @@ watch(sidebarSearchQuery, (value) => {
   }, 220)
 })
 
+watch(
+  () => isSettingsOpen.value,
+  (open) => {
+    if (open && isWasmRuntime) {
+      void refreshWasmRuntimeSettings()
+    }
+  },
+)
+
+watch(
+  () => isRuntimeSettingsRoute.value,
+  (active) => {
+    if (active && isWasmRuntime) {
+      void refreshWasmRuntimeSettings()
+    }
+  },
+)
+
+watch(
+  () => runtimeModelOptions.value,
+  (options) => {
+    if (!isWasmRuntime || options.length === 0) return
+    const current = wasmSettingsDraft.value.model.trim()
+    if (current && options.some((option) => option.value === current)) return
+    wasmSettingsDraft.value = {
+      ...wasmSettingsDraft.value,
+      model: options[0].value,
+    }
+  },
+  { immediate: true },
+)
+
 function onSkillsChanged(): void {
   void refreshSkills()
+}
+
+function openRuntimeSettings(): void {
+  isSettingsOpen.value = false
+  void router.push({ name: 'settings', params: { tab: 'runtime' } })
+  if (isMobile.value) setSidebarCollapsed(true)
+}
+
+function goBackFromRuntimeSettings(): void {
+  if (selectedThreadId.value) {
+    void router.push({ name: 'thread', params: { threadId: selectedThreadId.value } })
+    return
+  }
+  void router.push({ name: 'home' })
+}
+
+async function refreshWasmRuntimeSettings(): Promise<void> {
+  if (!isWasmRuntime) return
+  try {
+    const [draft, status] = await Promise.all([loadWasmRuntimeDraft(), getWasmRuntimeStatus()])
+    wasmSettingsDraft.value = draft
+    wasmRuntimeStatus.value = status
+  } catch (error) {
+    wasmRuntimeStatus.value = {
+      label: 'Settings unavailable',
+      detail: error instanceof Error ? error.message : String(error),
+      isError: true,
+    }
+  }
+}
+
+function onWasmTransportModeChange(mode: DemoTransportMode): void {
+  wasmSettingsDraft.value = applyWasmTransportDefaults(wasmSettingsDraft.value, mode)
+}
+
+function onWasmXrouterProviderChange(provider: XrouterProvider): void {
+  wasmSettingsDraft.value = applyWasmXrouterProvider(wasmSettingsDraft.value, provider)
+}
+
+async function saveCurrentWasmRuntimeSettings(): Promise<void> {
+  if (!isWasmRuntime || isSavingWasmSettings.value) return
+
+  isSavingWasmSettings.value = true
+  wasmSettingsFeedback.value = ''
+  wasmSettingsFeedbackTone.value = 'neutral'
+
+  try {
+    await saveWasmRuntimeDraft(wasmSettingsDraft.value)
+    await refreshAll()
+    await refreshWasmRuntimeSettings()
+    wasmSettingsFeedback.value = 'Runtime settings saved.'
+  } catch (error) {
+    wasmSettingsFeedback.value = error instanceof Error ? error.message : String(error)
+    wasmSettingsFeedbackTone.value = 'error'
+  } finally {
+    isSavingWasmSettings.value = false
+  }
+}
+
+async function reloadRuntimeSettingsScreen(): Promise<void> {
+  if (!isWasmRuntime || isSavingWasmSettings.value) return
+  isSavingWasmSettings.value = true
+  wasmSettingsFeedback.value = ''
+  wasmSettingsFeedbackTone.value = 'neutral'
+  try {
+    await refreshAll()
+    await refreshWasmRuntimeSettings()
+    wasmSettingsFeedback.value = 'Runtime settings reloaded.'
+  } catch (error) {
+    wasmSettingsFeedback.value = error instanceof Error ? error.message : String(error)
+    wasmSettingsFeedbackTone.value = 'error'
+  } finally {
+    isSavingWasmSettings.value = false
+  }
 }
 
 function toggleSidebarSearch(): void {
@@ -474,6 +762,7 @@ function onStartNewThread(projectName: string): void {
 }
 
 function onBrowseProjectFiles(projectName: string): void {
+  if (isWasmRuntime) return
   const projectGroup = projectGroups.value.find((group) => group.projectName === projectName)
   const projectCwd = projectGroup?.threads[0]?.cwd?.trim() ?? ''
   if (!projectCwd || typeof window === 'undefined') return
@@ -547,6 +836,7 @@ function onSelectNewThreadFolder(cwd: string): void {
 }
 
 async function onAddNewProject(rawInput: string): Promise<void> {
+  if (isWasmRuntime) return
   const normalizedInput = rawInput.trim()
   if (!normalizedInput) return
 
@@ -574,6 +864,7 @@ async function onAddNewProject(rawInput: string): Promise<void> {
 }
 
 async function resolveProjectBaseDirectory(): Promise<string> {
+  if (isWasmRuntime) return BROWSER_WORKSPACE_ROOT
   const baseDir = getProjectBaseDirectory()
   if (baseDir) return baseDir
   try {
@@ -596,6 +887,10 @@ function looksLikePath(value: string): boolean {
 }
 
 async function refreshDefaultProjectName(): Promise<void> {
+  if (isWasmRuntime) {
+    defaultNewProjectName.value = 'Workspace'
+    return
+  }
   const baseDir = getProjectBaseDirectory()
   if (!baseDir) {
     defaultNewProjectName.value = 'New Project (1)'
@@ -619,6 +914,10 @@ function getProjectBaseDirectory(): string {
 }
 
 async function loadHomeDirectory(): Promise<void> {
+  if (isWasmRuntime) {
+    homeDirectory.value = BROWSER_WORKSPACE_ROOT
+    return
+  }
   try {
     homeDirectory.value = await getHomeDirectory()
   } catch {
@@ -627,6 +926,13 @@ async function loadHomeDirectory(): Promise<void> {
 }
 
 async function loadWorkspaceRootOptionsState(): Promise<void> {
+  if (isWasmRuntime) {
+    workspaceRootOptionsState.value = {
+      order: [BROWSER_WORKSPACE_ROOT],
+      labels: { [BROWSER_WORKSPACE_ROOT]: 'Workspace' },
+    }
+    return
+  }
   try {
     const state = await getWorkspaceRootsState()
     workspaceRootOptionsState.value = {
@@ -746,6 +1052,9 @@ function normalizeMessageType(rawType: string | undefined, role: string): string
 }
 
 async function initialize(): Promise<void> {
+  if (isWasmRuntime && route.name === 'skills') {
+    await router.replace({ name: 'home' })
+  }
   await refreshAll()
   hasInitialized.value = true
   await syncThreadSelectionWithRoute()
@@ -757,7 +1066,7 @@ async function syncThreadSelectionWithRoute(): Promise<void> {
   isRouteSyncInProgress.value = true
 
   try {
-    if (route.name === 'home' || route.name === 'skills') {
+    if (route.name === 'home' || route.name === 'settings' || (!isWasmRuntime && route.name === 'skills')) {
       if (selectedThreadId.value !== '') {
         await selectThread('')
       }
@@ -804,7 +1113,7 @@ watch(
   async (threadId) => {
     if (!hasInitialized.value) return
     if (isRouteSyncInProgress.value) return
-    if (isHomeRoute.value || isSkillsRoute.value) return
+    if (isHomeRoute.value || isSkillsRoute.value || isRuntimeSettingsRoute.value) return
 
     if (!threadId) {
       if (route.name !== 'home') {
@@ -822,14 +1131,16 @@ watch(
   () => newThreadFolderOptions.value,
   (options) => {
     if (options.length === 0) {
-      newThreadCwd.value = ''
+      newThreadCwd.value = isWasmRuntime ? BROWSER_WORKSPACE_ROOT : ''
       return
     }
     const hasSelected = options.some((option) => option.value === newThreadCwd.value)
     if (!hasSelected) {
       newThreadCwd.value = options[0].value
     }
-    void refreshDefaultProjectName()
+    if (!isWasmRuntime) {
+      void refreshDefaultProjectName()
+    }
   },
   { immediate: true },
 )
@@ -838,7 +1149,9 @@ watch(
   () => newThreadCwd.value,
   () => {
     worktreeInitStatus.value = { phase: 'idle', title: '', message: '' }
-    void refreshDefaultProjectName()
+    if (!isWasmRuntime) {
+      void refreshDefaultProjectName()
+    }
   },
 )
 
@@ -881,8 +1194,8 @@ async function submitFirstMessageForNewThread(
 ): Promise<void> {
   try {
     worktreeInitStatus.value = { phase: 'idle', title: '', message: '' }
-    let targetCwd = newThreadCwd.value
-    if (newThreadRuntime.value === 'worktree') {
+    let targetCwd = newThreadCwd.value || (isWasmRuntime ? BROWSER_WORKSPACE_ROOT : '')
+    if (!isWasmRuntime && newThreadRuntime.value === 'worktree') {
       worktreeInitStatus.value = {
         phase: 'running',
         title: 'Creating worktree',
@@ -1048,7 +1361,7 @@ async function submitFirstMessageForNewThread(
 }
 
 .sidebar-settings-area {
-  @apply shrink-0 bg-slate-100 pt-2 px-2 pb-2 border-t border-zinc-200;
+  @apply shrink-0 bg-slate-100 pt-2 px-2 pb-2;
 }
 
 .sidebar-settings-button {
@@ -1075,6 +1388,10 @@ async function submitFirstMessageForNewThread(
   @apply text-left;
 }
 
+.sidebar-settings-row-chevron {
+  @apply h-4 w-4 text-zinc-400;
+}
+
 .sidebar-settings-value {
   @apply text-xs text-zinc-500 bg-zinc-100 rounded px-1.5 py-0.5;
 }
@@ -1094,6 +1411,109 @@ async function submitFirstMessageForNewThread(
 
 .sidebar-settings-toggle.is-on::after {
   transform: translateX(16px);
+}
+
+.runtime-settings-view {
+  @apply flex-1 min-h-0 overflow-y-auto px-4 py-4 sm:px-6 sm:py-5;
+}
+
+.runtime-settings-header {
+  @apply mb-4 flex flex-col gap-2;
+}
+
+.runtime-settings-back {
+  @apply inline-flex items-center gap-2 self-start rounded-lg border-0 bg-transparent px-0 py-0 text-sm font-medium text-zinc-600 transition hover:text-zinc-900 cursor-pointer;
+}
+
+.runtime-settings-back-icon {
+  @apply h-4 w-4;
+}
+
+.runtime-settings-heading {
+  @apply flex flex-col gap-1;
+}
+
+.runtime-settings-title {
+  @apply m-0 text-[1.45rem] font-semibold tracking-tight text-zinc-950;
+}
+
+.runtime-settings-subtitle {
+  @apply m-0 text-[0.82rem] text-zinc-500;
+}
+
+.settings-panel-card {
+  @apply w-full max-w-[82rem] overflow-hidden rounded-[1.4rem] border border-zinc-200 bg-zinc-50/70;
+}
+
+.settings-form-grid {
+  @apply divide-y divide-zinc-200;
+}
+
+.settings-form-row {
+  @apply flex items-center justify-between gap-4 px-5 py-3;
+}
+
+.settings-form-row.is-input {
+  @apply items-start;
+}
+
+.settings-form-copy {
+  @apply flex min-w-0 flex-1 flex-col gap-1;
+}
+
+.settings-form-title {
+  @apply text-[0.82rem] font-semibold text-zinc-900;
+}
+
+.settings-form-description {
+  @apply text-[0.82rem] leading-6 text-zinc-500;
+}
+
+.settings-chip {
+  @apply inline-flex shrink-0 rounded-full bg-zinc-900 px-2.5 py-1 text-[0.72rem] font-medium text-white;
+}
+
+.settings-chip.is-error {
+  @apply bg-rose-600;
+}
+
+.settings-select,
+.settings-input,
+.settings-select-button {
+  @apply h-10 min-w-[21rem] shrink-0 rounded-[1rem] border border-zinc-200 bg-white px-4 text-[0.82rem] text-zinc-800 outline-none transition focus:border-zinc-400;
+}
+
+.settings-select {
+  @apply pr-11;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='18' height='18' viewBox='0 0 24 24' fill='none' stroke='%239ca3af' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-position: right 12px center;
+  background-repeat: no-repeat;
+  background-size: 14px 14px;
+}
+
+.settings-select-button {
+  @apply inline-flex items-center justify-between text-left;
+}
+
+.settings-actions {
+  @apply flex justify-end gap-2 px-5 py-3;
+}
+
+.settings-primary-action {
+  @apply rounded-[1rem] border border-zinc-900 bg-zinc-900 px-3 py-2 text-[0.82rem] font-medium text-white transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-60;
+}
+
+.settings-secondary-action {
+  @apply rounded-[1rem] border border-zinc-200 bg-white px-3 py-2 text-[0.82rem] font-medium text-zinc-700 transition hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-60;
+}
+
+.settings-inline-note {
+  @apply m-0 border-t border-zinc-200 px-5 py-3 text-[0.82rem] text-zinc-500;
+}
+
+.settings-inline-note.is-error {
+  @apply text-rose-700;
 }
 
 .settings-panel-enter-active,

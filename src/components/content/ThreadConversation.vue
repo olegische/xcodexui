@@ -218,7 +218,7 @@
             </article>
 
             <button
-              v-if="canRollbackMessage(message)"
+              v-if="allowRollback && canRollbackMessage(message)"
               class="rollback-button"
               type="button"
               title="Rollback to this message (remove this turn and all after it)"
@@ -355,6 +355,7 @@ const props = defineProps<{
   scrollState: ThreadScrollState | null
   isTurnInProgress?: boolean
   isRollingBack?: boolean
+  allowRollback?: boolean
 }>()
 
 const emit = defineEmits<{

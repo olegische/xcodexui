@@ -19,6 +19,10 @@
       }"
     >
       <div class="composer-dropdown-menu">
+        <div v-if="menuTitleText" class="composer-dropdown-title">
+          {{ menuTitleText }}
+        </div>
+
         <div v-if="enableSearch" class="composer-dropdown-search-wrap">
           <input
             ref="searchInputRef"
@@ -38,7 +42,14 @@
               type="button"
               @click="onSelect(option.value)"
             >
-              {{ option.label }}
+              <span class="composer-dropdown-option-label">{{ option.label }}</span>
+              <span
+                v-if="showSelectedCheck && option.value === modelValue"
+                class="composer-dropdown-option-check"
+                aria-hidden="true"
+              >
+                ✓
+              </span>
             </button>
           </li>
           <li v-if="filteredOptions.length === 0" class="composer-dropdown-empty">
@@ -94,6 +105,8 @@ const props = defineProps<{
   enableSearch?: boolean
   searchPlaceholder?: string
   showAddAction?: boolean
+  menuTitle?: string
+  showSelectedCheck?: boolean
   addActionLabel?: string
   defaultAddValue?: string
   addPlaceholder?: string
@@ -121,6 +134,8 @@ const selectedLabel = computed(() => {
 const openDirection = computed(() => props.openDirection ?? 'down')
 const enableSearch = computed(() => props.enableSearch === true)
 const showAddAction = computed(() => props.showAddAction === true)
+const showSelectedCheck = computed(() => props.showSelectedCheck === true)
+const menuTitleText = computed(() => props.menuTitle?.trim() || '')
 const searchPlaceholderText = computed(() => props.searchPlaceholder?.trim() || 'Quick search projects')
 const addActionLabelText = computed(() => props.addActionLabel?.trim() || 'Add new project')
 const addPlaceholderText = computed(() => props.addPlaceholder?.trim() || 'Project name or absolute path')
@@ -243,7 +258,11 @@ onBeforeUnmount(() => {
 }
 
 .composer-dropdown-menu {
-  @apply m-0 min-w-56 rounded-xl border border-zinc-200 bg-white p-1 shadow-lg;
+  @apply m-0 min-w-52 rounded-2xl border border-zinc-700 bg-zinc-900 p-1 shadow-2xl shadow-black/30;
+}
+
+.composer-dropdown-title {
+  @apply px-3 pb-1 pt-2 text-xs font-medium text-zinc-500;
 }
 
 .composer-dropdown-search-wrap {
@@ -251,7 +270,7 @@ onBeforeUnmount(() => {
 }
 
 .composer-dropdown-search-input {
-  @apply w-full rounded-md border border-zinc-200 bg-white px-2 py-1 text-xs text-zinc-800 outline-none transition focus:border-zinc-400;
+  @apply w-full rounded-xl border border-zinc-700 bg-zinc-800 px-3 py-2 text-xs text-zinc-100 outline-none transition placeholder:text-zinc-500 focus:border-zinc-500;
 }
 
 .composer-dropdown-options {
@@ -259,27 +278,40 @@ onBeforeUnmount(() => {
 }
 
 .composer-dropdown-option {
-  @apply flex w-full items-center rounded-lg border-0 bg-transparent px-2 py-1.5 text-left text-sm text-zinc-700 transition hover:bg-zinc-100;
+  @apply flex w-full items-center gap-2 rounded-2xl border-0 bg-transparent px-3 py-2 text-left text-sm text-zinc-100 transition hover:bg-zinc-800 focus:outline-none;
 }
 
 .composer-dropdown-option.is-selected {
-  @apply bg-zinc-100;
+  @apply bg-transparent;
+}
+
+.composer-dropdown-option.is-selected:hover,
+.composer-dropdown-option.is-selected:focus-visible {
+  @apply bg-zinc-800;
+}
+
+.composer-dropdown-option-label {
+  @apply min-w-0 flex-1 truncate;
+}
+
+.composer-dropdown-option-check {
+  @apply shrink-0 text-sm font-medium text-zinc-100;
 }
 
 .composer-dropdown-empty {
-  @apply px-2 py-1.5 text-xs text-zinc-500;
+  @apply px-3 py-2 text-xs text-zinc-500;
 }
 
 .composer-dropdown-add {
-  @apply mt-1 flex w-full items-center rounded-lg border-0 border-t border-zinc-200 bg-transparent px-2 py-2 text-left text-sm font-medium text-zinc-800 transition hover:bg-zinc-100;
+  @apply mt-1 flex w-full items-center rounded-2xl border-0 bg-transparent px-3 py-2 text-left text-sm font-medium text-zinc-100 transition hover:bg-zinc-800;
 }
 
 .composer-dropdown-add-wrap {
-  @apply mt-1 border-t border-zinc-200 pt-1;
+  @apply mt-1 border-t border-zinc-800 pt-1;
 }
 
 .composer-dropdown-add-input {
-  @apply w-full rounded-md border border-zinc-200 bg-white px-2 py-1 text-xs text-zinc-800 outline-none transition focus:border-zinc-400;
+  @apply w-full rounded-xl border border-zinc-700 bg-zinc-800 px-3 py-2 text-xs text-zinc-100 outline-none transition placeholder:text-zinc-500 focus:border-zinc-500;
 }
 
 .composer-dropdown-add-actions {
@@ -287,6 +319,6 @@ onBeforeUnmount(() => {
 }
 
 .composer-dropdown-add-btn {
-  @apply rounded-md border border-zinc-200 bg-white px-2 py-0.5 text-xs text-zinc-700 transition hover:bg-zinc-100;
+  @apply rounded-lg border border-zinc-700 bg-zinc-800 px-2 py-1 text-xs text-zinc-100 transition hover:bg-zinc-700;
 }
 </style>
