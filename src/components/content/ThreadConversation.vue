@@ -236,6 +236,13 @@
             <article class="live-overlay-inline" aria-live="polite">
               <p class="live-overlay-label">{{ liveOverlay.activityLabel }}</p>
               <p
+                v-for="(detail, detailIndex) in liveOverlay.activityDetails"
+                :key="`live-detail-${detailIndex}`"
+                class="live-overlay-detail"
+              >
+                {{ detail }}
+              </p>
+              <p
                 v-if="liveOverlay.reasoningText"
                 class="live-overlay-reasoning"
                 ref="liveOverlayReasoningRef"
@@ -1076,6 +1083,10 @@ onBeforeUnmount(() => {
 
 .live-overlay-label {
   @apply m-0 text-sm leading-5 font-medium text-zinc-600;
+}
+
+.live-overlay-detail {
+  @apply m-0 text-sm leading-5 text-zinc-500 break-words;
 }
 
 .live-overlay-reasoning {

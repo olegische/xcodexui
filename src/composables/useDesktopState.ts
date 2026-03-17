@@ -1254,6 +1254,38 @@ export function useDesktopState() {
     return typeof value === 'string' ? value : ''
   }
 
+  function titleCaseWords(value: string): string {
+    return value
+      .split(/[\s_]+/u)
+      .filter((part) => part.length > 0)
+      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+      .join(' ')
+  }
+
+  function formatMcpServerLabel(server: string): string {
+    const normalized = server
+      .replace(/^mcp__/u, '')
+      .replace(/__$/u, '')
+      .trim()
+    if (!normalized) return 'MCP'
+    return `${titleCaseWords(normalized)} MCP`
+  }
+
+  function readToolCallDetails(item: Record<string, unknown>): string[] {
+    const itemType = readString(item.type).toLowerCase()
+    if (itemType === 'dynamictoolcall') {
+      const tool = readString(item.tool)
+      return tool ? [tool] : []
+    }
+    if (itemType === 'mcptoolcall') {
+      const tool = readString(item.tool)
+      const server = readString(item.server)
+      if (tool && server) return [`${tool} tool from ${formatMcpServerLabel(server)}`]
+      if (tool) return [tool]
+    }
+    return []
+  }
+
   function readNumber(value: unknown): number | null {
     return typeof value === 'number' && Number.isFinite(value) ? value : null
   }
@@ -1426,6 +1458,15 @@ export function useDesktopState() {
           activity: {
             label: 'Running command',
             details: cmd ? [cmd] : [],
+          },
+        }
+      }
+      if (itemType === 'dynamictoolcall' || itemType === 'mcptoolcall') {
+        return {
+          threadId,
+          activity: {
+            label: 'Calling',
+            details: item ? readToolCallDetails(item) : [],
           },
         }
       }
@@ -1860,6 +1901,9 @@ export function useDesktopState() {
 
     const startedReasoningItemId = readReasoningStartedItemId(notification)
     if (startedReasoningItemId) {
+      if (startedReasoningItemId !== activeReasoningItemId) {
+        clearLiveReasoningForThread(notificationThreadId)
+      }
       activeReasoningItemId = startedReasoningItemId
     }
 

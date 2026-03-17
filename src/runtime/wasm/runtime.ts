@@ -4,6 +4,10 @@ import {
   createNormalizedModelTurnRunner,
 } from '@browser-codex/wasm-browser-host/runtime-host'
 import { createBrowserCodexRuntime } from '@browser-codex/wasm-browser-codex-runtime'
+import {
+  createBrowserAwareToolExecutor,
+  initializePageTelemetry,
+} from '@browser-codex/wasm-browser-tools'
 import { threadToSessionSnapshot, turnIdFromNotification } from '@browser-codex/wasm-runtime-core'
 import { loadRuntimeModule } from '@browser-codex/app-webui-runtime/assets'
 import { DEFAULT_CODEX_CONFIG, DEFAULT_DEMO_INSTRUCTIONS } from '@browser-codex/app-webui-runtime/constants'
@@ -78,17 +82,8 @@ type WasmRuntimeContext = {
   subscribe: (listener: (notification: RpcNotification) => void) => () => void
 }
 let runtimeContextPromise: Promise<WasmRuntimeContext> | null = null
-
-function emptyDynamicTools() {
-  return {
-    async list() {
-      return { tools: [] }
-    },
-    async invoke() {
-      throw new Error('Dynamic tools are not available in xcodexui wasm mode.')
-    },
-  }
-}
+const browserToolExecutor = createBrowserAwareToolExecutor()
+let pageTelemetryInitialized = false
 
 function actualThreadIdFromSnapshot(snapshot: SessionSnapshot): string | null {
   if (
@@ -125,6 +120,11 @@ export async function getWasmRuntimeContext(): Promise<WasmRuntimeContext> {
   }
 
   runtimeContextPromise = (async () => {
+    if (!pageTelemetryInitialized) {
+      initializePageTelemetry()
+      pageTelemetryInitialized = true
+    }
+
     const runtimeModule = await loadRuntimeModule() as unknown
     const host = createBrowserRuntimeHostFromDeps({
       async loadBootstrap() {
@@ -221,7 +221,7 @@ export async function getWasmRuntimeContext(): Promise<WasmRuntimeContext> {
           loadSession: loadStoredSession,
           saveSession: saveStoredSession,
         },
-        dynamicTools: emptyDynamicTools(),
+        dynamicTools: browserToolExecutor,
         async readAccount({ authState, config }) {
           const provider = getActiveProvider(config)
           if (authState === null || authState.openaiApiKey === null || authState.openaiApiKey.trim().length === 0) {
