@@ -179,6 +179,10 @@
                     </div>
                   </div>
                 </div>
+                <p v-else-if="isToolCallMessage(message)" class="tool-call-line">
+                  <span class="tool-call-verb">{{ parseToolCallMessage(message.text).verb }}</span>
+                  <span class="tool-call-subject">{{ parseToolCallMessage(message.text).subject }}</span>
+                </p>
                 <div v-else class="message-text-flow">
                   <template v-for="(block, blockIndex) in parseMessageBlocks(message.text)" :key="`block-${blockIndex}`">
                     <p v-if="block.kind === 'text'" class="message-text">
@@ -267,6 +271,22 @@ const prevCommandStatuses = ref<Record<string, string>>({})
 
 function isCommandMessage(message: UiMessage): boolean {
   return message.messageType === 'commandExecution' && !!message.commandExecution
+}
+
+function isToolCallMessage(message: UiMessage): boolean {
+  return message.messageType === 'toolCall'
+}
+
+function parseToolCallMessage(value: string): { verb: string; subject: string } {
+  const trimmed = value.trim()
+  const match = trimmed.match(/^(Called|Calling)\s+(.+)$/u)
+  if (!match) {
+    return { verb: trimmed, subject: '' }
+  }
+  return {
+    verb: match[1],
+    subject: match[2],
+  }
 }
 
 function isCommandExpanded(message: UiMessage): boolean {
@@ -1115,6 +1135,18 @@ onBeforeUnmount(() => {
 
 .message-text {
   @apply m-0 text-sm leading-relaxed whitespace-pre-wrap text-slate-800;
+}
+
+.tool-call-line {
+  @apply m-0 text-sm leading-relaxed whitespace-pre-wrap;
+}
+
+.tool-call-verb {
+  @apply text-slate-800;
+}
+
+.tool-call-subject {
+  @apply text-zinc-500;
 }
 
 .message-markdown-image {
