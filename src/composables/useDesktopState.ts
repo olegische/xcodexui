@@ -336,6 +336,36 @@ function mergeMessages(
   return areMessageArraysEqual(previous, merged) ? previous : merged
 }
 
+function stripDuplicatedAssistantCarryover(messages: UiMessage[]): UiMessage[] {
+  let changed = false
+  const next = messages.map((message, index) => {
+    if (message.role !== 'assistant' || message.messageType === 'agentMessage.live.finalized') {
+      return message
+    }
+    const previous = messages[index - 1]
+    if (
+      !previous ||
+      previous.role !== 'assistant' ||
+      previous.messageType !== 'agentMessage.live.finalized' ||
+      previous.turnIndex !== message.turnIndex
+    ) {
+      return message
+    }
+    const prefix = previous.text.trim()
+    const text = message.text
+    if (!prefix || !text.startsWith(prefix)) {
+      return message
+    }
+    const stripped = text.slice(prefix.length).replace(/^\s+/u, '')
+    if (!stripped || stripped === text) {
+      return message
+    }
+    changed = true
+    return { ...message, text: stripped }
+  })
+  return changed ? next : messages
+}
+
 function normalizeMessageText(value: string): string {
   return value.replace(/\s+/gu, ' ').trim()
 }
@@ -1199,10 +1229,11 @@ export function useDesktopState() {
 
   function setPersistedMessagesForThread(threadId: string, nextMessages: UiMessage[]): void {
     const previous = persistedMessagesByThreadId.value[threadId] ?? []
-    if (areMessageArraysEqual(previous, nextMessages)) return
+    const normalizedMessages = stripDuplicatedAssistantCarryover(nextMessages)
+    if (areMessageArraysEqual(previous, normalizedMessages)) return
     persistedMessagesByThreadId.value = {
       ...persistedMessagesByThreadId.value,
-      [threadId]: nextMessages,
+      [threadId]: normalizedMessages,
     }
   }
 
@@ -1219,6 +1250,23 @@ export function useDesktopState() {
     const previous = liveAgentMessagesByThreadId.value[threadId] ?? []
     const next = upsertMessage(previous, nextMessage)
     setLiveAgentMessagesForThread(threadId, next)
+  }
+
+  function snapshotLiveAssistantMessages(threadId: string): void {
+    const currentLive = liveAgentMessagesByThreadId.value[threadId] ?? []
+    const assistantSegments = currentLive
+      .filter((message) => message.role === 'assistant' && message.messageType === 'agentMessage.live')
+      .map((message) => ({
+        ...message,
+        id: `finalized:${message.id}`,
+        messageType: 'agentMessage.live.finalized',
+      }))
+
+    if (assistantSegments.length === 0) return
+
+    const persisted = persistedMessagesByThreadId.value[threadId] ?? []
+    const nextPersisted = [...persisted, ...assistantSegments]
+    setPersistedMessagesForThread(threadId, nextPersisted)
   }
 
   function clearActiveLiveTextSegment(threadId: string): void {
@@ -2061,6 +2109,7 @@ export function useDesktopState() {
       clearActiveLiveTextSegment(notificationThreadId)
       const currentLive = liveAgentMessagesByThreadId.value[notificationThreadId] ?? []
       if (currentLive.length > 0) {
+        snapshotLiveAssistantMessages(notificationThreadId)
         setLiveAgentMessagesForThread(notificationThreadId, [])
       }
       if (liveCommandsByThreadId.value[notificationThreadId]) {
@@ -2248,10 +2297,18 @@ export function useDesktopState() {
       })
       setPersistedMessagesForThread(threadId, mergedMessages)
 
-      const previousLiveAgent = liveAgentMessagesByThreadId.value[threadId] ?? []
-      const nextLiveAgent = removeRedundantLiveAgentMessages(previousLiveAgent, nextMessages)
-      setLiveAgentMessagesForThread(threadId, nextLiveAgent)
-      removeLiveCommandsPersistedIn(threadId, nextMessages)
+      if (inProgress) {
+        const previousLiveAgent = liveAgentMessagesByThreadId.value[threadId] ?? []
+        const nextLiveAgent = removeRedundantLiveAgentMessages(previousLiveAgent, nextMessages)
+        setLiveAgentMessagesForThread(threadId, nextLiveAgent)
+        removeLiveCommandsPersistedIn(threadId, nextMessages)
+      } else {
+        setLiveAgentMessagesForThread(threadId, [])
+        clearActiveLiveTextSegment(threadId)
+        if (liveCommandsByThreadId.value[threadId]) {
+          liveCommandsByThreadId.value = omitKey(liveCommandsByThreadId.value, threadId)
+        }
+      }
 
       loadedMessagesByThreadId.value = {
         ...loadedMessagesByThreadId.value,
