@@ -650,7 +650,6 @@ export function useDesktopState() {
   const selectedThreadId = ref(loadSelectedThreadId())
   const persistedMessagesByThreadId = ref<Record<string, UiMessage[]>>({})
   const liveAgentMessagesByThreadId = ref<Record<string, UiMessage[]>>({})
-  const liveToolMessagesByThreadId = ref<Record<string, UiMessage[]>>({})
   const liveReasoningTextByThreadId = ref<Record<string, string>>({})
   const liveCommandsByThreadId = ref<Record<string, UiMessage[]>>({})
   const inProgressById = ref<Record<string, boolean>>({})
@@ -753,7 +752,6 @@ export function useDesktopState() {
     const persisted = persistedMessagesByThreadId.value[threadId] ?? []
     const liveAgent = liveAgentMessagesByThreadId.value[threadId] ?? []
     const liveCommands = liveCommandsByThreadId.value[threadId] ?? []
-    const liveTools = liveToolMessagesByThreadId.value[threadId] ?? []
     const latestPersistedUserMessage = [...persisted].reverse().find((message) => message.role === 'user')
 
     const pendingAttachments = pending.fileAttachments.map((file) => ({
@@ -770,7 +768,7 @@ export function useDesktopState() {
       return null
     }
 
-    const hasCurrentTurnLiveArtifacts = liveAgent.length > 0 || liveCommands.length > 0 || liveTools.length > 0
+    const hasCurrentTurnLiveArtifacts = liveAgent.length > 0 || liveCommands.length > 0
     if (!hasCurrentTurnLiveArtifacts && inProgressById.value[threadId] !== true) {
       return null
     }
@@ -792,10 +790,9 @@ export function useDesktopState() {
     const pendingUserMessage = selectedPendingUserMessage.value
     const liveAgent = liveAgentMessagesByThreadId.value[threadId] ?? []
     const liveCommands = liveCommandsByThreadId.value[threadId] ?? []
-    const liveTools = liveToolMessagesByThreadId.value[threadId] ?? []
     const combined = pendingUserMessage
-      ? [...persisted, pendingUserMessage, ...liveTools, ...liveCommands, ...liveAgent]
-      : [...persisted, ...liveTools, ...liveCommands, ...liveAgent]
+      ? [...persisted, pendingUserMessage, ...liveCommands, ...liveAgent]
+      : [...persisted, ...liveCommands, ...liveAgent]
 
     const summary = turnSummaryByThreadId.value[threadId]
     if (!summary) return combined
@@ -857,9 +854,6 @@ export function useDesktopState() {
         setPersistedMessagesForThread(threadId, rolledBackMessages)
         setLiveAgentMessagesForThread(threadId, [])
         clearLiveReasoningForThread(threadId)
-        if (liveToolMessagesByThreadId.value[threadId]) {
-          liveToolMessagesByThreadId.value = omitKey(liveToolMessagesByThreadId.value, threadId)
-        }
         if (liveCommandsByThreadId.value[threadId]) {
           liveCommandsByThreadId.value = omitKey(liveCommandsByThreadId.value, threadId)
         }
@@ -1040,7 +1034,6 @@ export function useDesktopState() {
     resumedThreadById.value = pruneThreadStateMap(resumedThreadById.value, activeThreadIds)
     persistedMessagesByThreadId.value = pruneThreadStateMap(persistedMessagesByThreadId.value, activeThreadIds)
     liveAgentMessagesByThreadId.value = pruneThreadStateMap(liveAgentMessagesByThreadId.value, activeThreadIds)
-    liveToolMessagesByThreadId.value = pruneThreadStateMap(liveToolMessagesByThreadId.value, activeThreadIds)
     liveReasoningTextByThreadId.value = pruneThreadStateMap(liveReasoningTextByThreadId.value, activeThreadIds)
     liveCommandsByThreadId.value = pruneThreadStateMap(liveCommandsByThreadId.value, activeThreadIds)
     turnSummaryByThreadId.value = pruneThreadStateMap(turnSummaryByThreadId.value, activeThreadIds)
@@ -1778,26 +1771,6 @@ export function useDesktopState() {
     }
   }
 
-  function upsertLiveToolMessage(threadId: string, msg: UiMessage): void {
-    const previous = liveToolMessagesByThreadId.value[threadId] ?? []
-    const next = upsertMessage(previous, msg)
-    if (next === previous) return
-    liveToolMessagesByThreadId.value = { ...liveToolMessagesByThreadId.value, [threadId]: next }
-  }
-
-  function removeLiveToolMessagesPersistedIn(threadId: string, persistedMessages: UiMessage[]): void {
-    const current = liveToolMessagesByThreadId.value[threadId]
-    if (!current || current.length === 0) return
-    const persistedIds = new Set(persistedMessages.map((m) => m.id))
-    const next = current.filter((m) => !persistedIds.has(m.id))
-    if (next.length === current.length) return
-    if (next.length === 0) {
-      liveToolMessagesByThreadId.value = omitKey(liveToolMessagesByThreadId.value, threadId)
-    } else {
-      liveToolMessagesByThreadId.value = { ...liveToolMessagesByThreadId.value, [threadId]: next }
-    }
-  }
-
   function upsertLiveCommand(threadId: string, msg: UiMessage): void {
     const previous = liveCommandsByThreadId.value[threadId] ?? []
     const next = upsertMessage(previous, msg)
@@ -2000,7 +1973,7 @@ export function useDesktopState() {
 
     const toolStarted = readToolCallStarted(notification)
     if (toolStarted) {
-      upsertLiveToolMessage(notificationThreadId, toolStarted)
+      upsertLiveAgentMessage(notificationThreadId, toolStarted)
       setTurnActivityForThread(notificationThreadId, { label: 'Calling', details: [] })
     }
 
@@ -2022,7 +1995,7 @@ export function useDesktopState() {
 
     const toolCompleted = readToolCallCompleted(notification)
     if (toolCompleted) {
-      upsertLiveToolMessage(notificationThreadId, toolCompleted)
+      upsertLiveAgentMessage(notificationThreadId, toolCompleted)
     }
 
     if (isAgentContentEvent(notification)) {
@@ -2041,8 +2014,10 @@ export function useDesktopState() {
       activeReasoningItemId = ''
       shouldAutoScrollOnNextAgentEvent = false
       clearLiveReasoningForThread(notificationThreadId)
-      if (liveToolMessagesByThreadId.value[notificationThreadId]) {
-        liveToolMessagesByThreadId.value = omitKey(liveToolMessagesByThreadId.value, notificationThreadId)
+      const currentLive = liveAgentMessagesByThreadId.value[notificationThreadId] ?? []
+      const filteredLive = currentLive.filter((message) => message.messageType !== 'toolCall')
+      if (filteredLive.length !== currentLive.length) {
+        setLiveAgentMessagesForThread(notificationThreadId, filteredLive)
       }
       if (liveCommandsByThreadId.value[notificationThreadId]) {
         liveCommandsByThreadId.value = omitKey(liveCommandsByThreadId.value, notificationThreadId)
@@ -2232,7 +2207,6 @@ export function useDesktopState() {
       const previousLiveAgent = liveAgentMessagesByThreadId.value[threadId] ?? []
       const nextLiveAgent = removeRedundantLiveAgentMessages(previousLiveAgent, nextMessages)
       setLiveAgentMessagesForThread(threadId, nextLiveAgent)
-      removeLiveToolMessagesPersistedIn(threadId, nextMessages)
       removeLiveCommandsPersistedIn(threadId, nextMessages)
 
       loadedMessagesByThreadId.value = {
@@ -2598,9 +2572,6 @@ export function useDesktopState() {
       setPersistedMessagesForThread(threadId, nextMessages)
       setLiveAgentMessagesForThread(threadId, [])
       clearLiveReasoningForThread(threadId)
-      if (liveToolMessagesByThreadId.value[threadId]) {
-        liveToolMessagesByThreadId.value = omitKey(liveToolMessagesByThreadId.value, threadId)
-      }
       if (liveCommandsByThreadId.value[threadId]) {
         liveCommandsByThreadId.value = omitKey(liveCommandsByThreadId.value, threadId)
       }
@@ -2922,7 +2893,6 @@ export function useDesktopState() {
     shouldAutoScrollOnNextAgentEvent = false
     persistedMessagesByThreadId.value = {}
     liveAgentMessagesByThreadId.value = {}
-    liveToolMessagesByThreadId.value = {}
     liveReasoningTextByThreadId.value = {}
     liveCommandsByThreadId.value = {}
     turnActivityByThreadId.value = {}
