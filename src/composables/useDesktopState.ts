@@ -336,36 +336,6 @@ function mergeMessages(
   return areMessageArraysEqual(previous, merged) ? previous : merged
 }
 
-function stripDuplicatedAssistantCarryover(messages: UiMessage[]): UiMessage[] {
-  let changed = false
-  const next = messages.map((message, index) => {
-    if (message.role !== 'assistant' || message.messageType === 'agentMessage.live.finalized') {
-      return message
-    }
-    const previous = messages[index - 1]
-    if (
-      !previous ||
-      previous.role !== 'assistant' ||
-      previous.messageType !== 'agentMessage.live.finalized' ||
-      previous.turnIndex !== message.turnIndex
-    ) {
-      return message
-    }
-    const prefix = previous.text.trim()
-    const text = message.text
-    if (!prefix || !text.startsWith(prefix)) {
-      return message
-    }
-    const stripped = text.slice(prefix.length).replace(/^\s+/u, '')
-    if (!stripped || stripped === text) {
-      return message
-    }
-    changed = true
-    return { ...message, text: stripped }
-  })
-  return changed ? next : messages
-}
-
 function normalizeMessageText(value: string): string {
   return value.replace(/\s+/gu, ' ').trim()
 }
@@ -457,6 +427,11 @@ type LiveTextSegmentState = {
   kind: 'assistant' | 'reasoning'
   itemId: string
   messageId: string
+}
+
+type FinalizedTurnSnapshotState = {
+  turnId: string
+  messages: UiMessage[]
 }
 
 const WORKED_MESSAGE_TYPE = 'worked'
@@ -688,6 +663,7 @@ export function useDesktopState() {
   const liveAgentMessagesByThreadId = ref<Record<string, UiMessage[]>>({})
   const liveTextSegmentByThreadId = ref<Record<string, LiveTextSegmentState>>({})
   const liveTextSegmentCountByThreadId = ref<Record<string, number>>({})
+  const finalizedTurnSnapshotByThreadId = ref<Record<string, FinalizedTurnSnapshotState>>({})
   const liveCommandsByThreadId = ref<Record<string, UiMessage[]>>({})
   const inProgressById = ref<Record<string, boolean>>({})
   type FileAttachment = { label: string; path: string; fsPath: string }
@@ -823,12 +799,14 @@ export function useDesktopState() {
     if (!threadId) return []
 
     const persisted = persistedMessagesByThreadId.value[threadId] ?? []
+    const finalizedSnapshot = finalizedTurnSnapshotByThreadId.value[threadId]
     const pendingUserMessage = selectedPendingUserMessage.value
     const liveAgent = liveAgentMessagesByThreadId.value[threadId] ?? []
     const liveCommands = liveCommandsByThreadId.value[threadId] ?? []
+    const baseMessages = finalizedSnapshot?.messages ?? persisted
     const combined = pendingUserMessage
-      ? [...persisted, pendingUserMessage, ...liveCommands, ...liveAgent]
-      : [...persisted, ...liveCommands, ...liveAgent]
+      ? [...baseMessages, pendingUserMessage, ...liveCommands, ...liveAgent]
+      : [...baseMessages, ...liveCommands, ...liveAgent]
 
     const summary = turnSummaryByThreadId.value[threadId]
     if (!summary) return combined
@@ -890,6 +868,7 @@ export function useDesktopState() {
         setPersistedMessagesForThread(threadId, rolledBackMessages)
         setLiveAgentMessagesForThread(threadId, [])
         clearActiveLiveTextSegment(threadId)
+        setFinalizedTurnSnapshotForThread(threadId, null)
         if (liveCommandsByThreadId.value[threadId]) {
           liveCommandsByThreadId.value = omitKey(liveCommandsByThreadId.value, threadId)
         }
@@ -1072,6 +1051,7 @@ export function useDesktopState() {
     liveAgentMessagesByThreadId.value = pruneThreadStateMap(liveAgentMessagesByThreadId.value, activeThreadIds)
     liveTextSegmentByThreadId.value = pruneThreadStateMap(liveTextSegmentByThreadId.value, activeThreadIds)
     liveTextSegmentCountByThreadId.value = pruneThreadStateMap(liveTextSegmentCountByThreadId.value, activeThreadIds)
+    finalizedTurnSnapshotByThreadId.value = pruneThreadStateMap(finalizedTurnSnapshotByThreadId.value, activeThreadIds)
     liveCommandsByThreadId.value = pruneThreadStateMap(liveCommandsByThreadId.value, activeThreadIds)
     turnSummaryByThreadId.value = pruneThreadStateMap(turnSummaryByThreadId.value, activeThreadIds)
     turnActivityByThreadId.value = pruneThreadStateMap(turnActivityByThreadId.value, activeThreadIds)
@@ -1229,11 +1209,10 @@ export function useDesktopState() {
 
   function setPersistedMessagesForThread(threadId: string, nextMessages: UiMessage[]): void {
     const previous = persistedMessagesByThreadId.value[threadId] ?? []
-    const normalizedMessages = stripDuplicatedAssistantCarryover(nextMessages)
-    if (areMessageArraysEqual(previous, normalizedMessages)) return
+    if (areMessageArraysEqual(previous, nextMessages)) return
     persistedMessagesByThreadId.value = {
       ...persistedMessagesByThreadId.value,
-      [threadId]: normalizedMessages,
+      [threadId]: nextMessages,
     }
   }
 
@@ -1252,21 +1231,36 @@ export function useDesktopState() {
     setLiveAgentMessagesForThread(threadId, next)
   }
 
-  function snapshotLiveAssistantMessages(threadId: string): void {
-    const currentLive = liveAgentMessagesByThreadId.value[threadId] ?? []
-    const assistantSegments = currentLive
-      .filter((message) => message.role === 'assistant' && message.messageType === 'agentMessage.live')
-      .map((message) => ({
-        ...message,
-        id: `finalized:${message.id}`,
-        messageType: 'agentMessage.live.finalized',
-      }))
+  function setFinalizedTurnSnapshotForThread(
+    threadId: string,
+    snapshot: FinalizedTurnSnapshotState | null,
+  ): void {
+    if (!threadId) return
+    const previous = finalizedTurnSnapshotByThreadId.value[threadId]
+    if (!snapshot) {
+      if (previous) {
+        finalizedTurnSnapshotByThreadId.value = omitKey(finalizedTurnSnapshotByThreadId.value, threadId)
+      }
+      return
+    }
+    if (previous?.turnId === snapshot.turnId && areMessageArraysEqual(previous.messages, snapshot.messages)) {
+      return
+    }
+    finalizedTurnSnapshotByThreadId.value = {
+      ...finalizedTurnSnapshotByThreadId.value,
+      [threadId]: snapshot,
+    }
+  }
 
-    if (assistantSegments.length === 0) return
-
+  function buildFinalizedTurnSnapshot(threadId: string, turnId: string): FinalizedTurnSnapshotState {
     const persisted = persistedMessagesByThreadId.value[threadId] ?? []
-    const nextPersisted = [...persisted, ...assistantSegments]
-    setPersistedMessagesForThread(threadId, nextPersisted)
+    const liveCommands = liveCommandsByThreadId.value[threadId] ?? []
+    const liveAgent = (liveAgentMessagesByThreadId.value[threadId] ?? [])
+      .filter((message) => message.messageType !== 'toolCall' && message.messageType !== 'reasoning.live')
+    return {
+      turnId,
+      messages: [...persisted, ...liveCommands, ...liveAgent],
+    }
   }
 
   function clearActiveLiveTextSegment(threadId: string): void {
@@ -1917,6 +1911,7 @@ export function useDesktopState() {
         ...activeTurnIdByThreadId.value,
         [startedTurn.threadId]: startedTurn.turnId,
       }
+      setFinalizedTurnSnapshotForThread(startedTurn.threadId, null)
       setTurnSummaryForThread(startedTurn.threadId, null)
       setTurnErrorForThread(startedTurn.threadId, null)
       setThreadInProgress(startedTurn.threadId, true)
@@ -2107,9 +2102,16 @@ export function useDesktopState() {
       activeReasoningItemId = ''
       shouldAutoScrollOnNextAgentEvent = false
       clearActiveLiveTextSegment(notificationThreadId)
-      const currentLive = liveAgentMessagesByThreadId.value[notificationThreadId] ?? []
-      if (currentLive.length > 0) {
-        snapshotLiveAssistantMessages(notificationThreadId)
+      const completedTurnId =
+        completedTurn?.turnId ||
+        readString(asRecord(asRecord(notification.params)?.turn)?.id) ||
+        activeTurnIdByThreadId.value[notificationThreadId] ||
+        `${notificationThreadId}:unknown`
+      setFinalizedTurnSnapshotForThread(
+        notificationThreadId,
+        buildFinalizedTurnSnapshot(notificationThreadId, completedTurnId),
+      )
+      if ((liveAgentMessagesByThreadId.value[notificationThreadId] ?? []).length > 0) {
         setLiveAgentMessagesForThread(notificationThreadId, [])
       }
       if (liveCommandsByThreadId.value[notificationThreadId]) {
@@ -2291,18 +2293,21 @@ export function useDesktopState() {
       }
 
       const { messages: nextMessages, inProgress } = await getThreadDetail(threadId)
-      const previousPersisted = persistedMessagesByThreadId.value[threadId] ?? []
+      const finalizedSnapshot = finalizedTurnSnapshotByThreadId.value[threadId]
+      const previousPersisted = finalizedSnapshot?.messages ?? persistedMessagesByThreadId.value[threadId] ?? []
       const mergedMessages = mergeMessages(previousPersisted, nextMessages, {
         preserveMissing: options.silent === true,
       })
       setPersistedMessagesForThread(threadId, mergedMessages)
 
       if (inProgress) {
+        setFinalizedTurnSnapshotForThread(threadId, null)
         const previousLiveAgent = liveAgentMessagesByThreadId.value[threadId] ?? []
         const nextLiveAgent = removeRedundantLiveAgentMessages(previousLiveAgent, nextMessages)
         setLiveAgentMessagesForThread(threadId, nextLiveAgent)
         removeLiveCommandsPersistedIn(threadId, nextMessages)
       } else {
+        setFinalizedTurnSnapshotForThread(threadId, null)
         setLiveAgentMessagesForThread(threadId, [])
         clearActiveLiveTextSegment(threadId)
         if (liveCommandsByThreadId.value[threadId]) {
@@ -2673,6 +2678,7 @@ export function useDesktopState() {
       setPersistedMessagesForThread(threadId, nextMessages)
       setLiveAgentMessagesForThread(threadId, [])
       clearActiveLiveTextSegment(threadId)
+      setFinalizedTurnSnapshotForThread(threadId, null)
       if (liveCommandsByThreadId.value[threadId]) {
         liveCommandsByThreadId.value = omitKey(liveCommandsByThreadId.value, threadId)
       }
@@ -2996,6 +3002,7 @@ export function useDesktopState() {
     liveAgentMessagesByThreadId.value = {}
     liveTextSegmentByThreadId.value = {}
     liveTextSegmentCountByThreadId.value = {}
+    finalizedTurnSnapshotByThreadId.value = {}
     liveCommandsByThreadId.value = {}
     turnActivityByThreadId.value = {}
     turnSummaryByThreadId.value = {}
