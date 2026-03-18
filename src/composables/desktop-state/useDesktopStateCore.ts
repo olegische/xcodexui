@@ -79,7 +79,9 @@ import {
 import { createDesktopLedger } from './ledger'
 import { createProjectState } from './project-state'
 import { createThreadListState } from './thread-list-state'
+import { createThreadPolling } from './thread-polling'
 import { createThreadPreferences } from './thread-preferences'
+import { createThreadRealtime } from './thread-realtime'
 import { createThreadRuntimeState } from './thread-runtime-state'
 import { createThreadSync } from './thread-sync'
 import { createThreadTurnActions } from './thread-turn-actions'
@@ -504,85 +506,6 @@ export function useDesktopState() {
     pendingTurnRequestByThreadId.value = omitKey(pendingTurnRequestByThreadId.value, threadId)
   }
 
-  async function retryPendingTurnWithFallback(threadId: string): Promise<void> {
-    if (fallbackRetryInFlightThreadIds.has(threadId)) return
-    const pending = pendingTurnRequestByThreadId.value[threadId]
-    if (!pending || pending.fallbackRetried) return
-
-    fallbackRetryInFlightThreadIds.add(threadId)
-    setPendingTurnRequest(threadId, {
-      ...pending,
-      fallbackRetried: true,
-    })
-
-    try {
-      await applyFallbackModelSelection()
-      // Remove the failed user turn before replaying on fallback model to avoid duplicated user messages.
-      try {
-        const payload = await rollbackThreadRaw(threadId, 1)
-        const rolledBackMessages = normalizeThreadMessagesV2({ thread: payload.thread })
-        setConfirmedTranscriptForThread(threadId, rolledBackMessages, { inProgress: false })
-        clearLiveLedger(threadId)
-        clearActiveLiveTextSegment(threadId)
-        setFinalizedTurnSnapshotForThread(threadId, null, { forceClear: true })
-      } catch {
-        // If rollback fails, continue with retry rather than dropping the turn.
-      }
-      setTurnErrorForThread(threadId, null)
-      error.value = ''
-      setTurnSummaryForThread(threadId, null)
-      setTurnActivityForThread(threadId, {
-        label: 'Thinking',
-        details: buildPendingTurnDetails(MODEL_FALLBACK_ID, pending.effort),
-      })
-      updateLedgerThreadState(threadId, (current) => ({
-        ...current,
-        phase: 'live',
-        finalizedSnapshot: null,
-      }))
-
-      if (resumedThreadById.value[threadId] !== true) {
-        await resumeThread(threadId)
-      }
-
-      await startThreadTurnRaw(
-        threadId,
-        buildProtocolTurnInput(
-          pending.text,
-          pending.imageUrls,
-          pending.skills,
-          pending.fileAttachments,
-        ),
-        {
-          model: MODEL_FALLBACK_ID,
-          effort: pending.effort || undefined,
-          attachments: pending.fileAttachments,
-        },
-      )
-
-      resumedThreadById.value = {
-        ...resumedThreadById.value,
-        [threadId]: true,
-      }
-
-      pendingThreadMessageRefresh.add(threadId)
-      pendingThreadsRefresh = true
-      await syncFromNotifications()
-    } catch (unknownError) {
-      const errorMessage = unknownError instanceof Error ? unknownError.message : 'Unknown application error'
-      setTurnErrorForThread(threadId, errorMessage)
-      error.value = errorMessage
-      updateLedgerThreadState(threadId, (current) => ({
-        ...current,
-        phase: current.phase === 'failed' ? 'failed' : 'settled',
-        activeTurnId: '',
-      }))
-      setTurnActivityForThread(threadId, null)
-    } finally {
-      fallbackRetryInFlightThreadIds.delete(threadId)
-    }
-  }
-
   function setSelectedReasoningEffort(effort: ReasoningEffort | ''): void {
     if (effort && !REASONING_EFFORT_OPTIONS.includes(effort)) {
       return
@@ -819,280 +742,62 @@ export function useDesktopState() {
     applyFallbackModelSelection,
     requestThreadTitleGeneration,
   })
-
-  function applyRealtimeUpdates(notification: RpcNotification): void {
-    if (handleServerRequestNotification(notification)) {
-      return
-    }
-
-    const threadNameUpdate = readNotificationThreadName(notification)
-    if (threadNameUpdate) {
-      threadTitleById.value = { ...threadTitleById.value, [threadNameUpdate.threadId]: threadNameUpdate.threadName }
-      applyThreadFlags()
-      void persistThreadTitle(threadNameUpdate.threadId, threadNameUpdate.threadName)
-    }
-
-    const turnActivity = readTurnActivity(notification)
-    if (turnActivity) {
-      setTurnActivityForThread(turnActivity.threadId, turnActivity.activity)
-    }
-
-    const startedTurn = readTurnStartedInfo(notification)
-    if (startedTurn) {
-      pendingTurnStartsById.set(startedTurn.turnId, startedTurn)
-      updateLedgerThreadState(startedTurn.threadId, (current) => ({
-        ...current,
-        phase: 'live',
-        activeTurnId: startedTurn.turnId,
-        finalizedSnapshot: null,
-        liveEventLog: [],
-        activeSegment: null,
-      }))
-      setFinalizedTurnSnapshotForThread(startedTurn.threadId, null, { forceClear: true })
-      setTurnSummaryForThread(startedTurn.threadId, null)
-      setTurnErrorForThread(startedTurn.threadId, null)
-      if (eventUnreadByThreadId.value[startedTurn.threadId]) {
-        eventUnreadByThreadId.value = omitKey(eventUnreadByThreadId.value, startedTurn.threadId)
-      }
-    }
-
-    const completedTurn = readTurnCompletedInfo(notification)
-    const turnErrorMessage = readTurnErrorMessage(notification)
-    const completedThreadId = completedTurn?.threadId ?? extractThreadIdFromNotification(notification)
-    const shouldRetryWithFallback =
-      Boolean(completedThreadId) &&
-      Boolean(turnErrorMessage) &&
-      selectedModelId.value !== MODEL_FALLBACK_ID &&
-      isUnsupportedChatGptModelError(new Error(turnErrorMessage))
-    if (completedTurn) {
-      const startedTurnState = pendingTurnStartsById.get(completedTurn.turnId)
-      if (startedTurnState) {
-        pendingTurnStartsById.delete(completedTurn.turnId)
-      }
-
-      const rawDurationMs =
-        readNumber(asRecord(notification.params)?.durationMs) ??
-        readNumber(asRecord(asRecord(notification.params)?.turn)?.durationMs) ??
-        (typeof completedTurn.startedAtMs === 'number'
-          ? completedTurn.completedAtMs - completedTurn.startedAtMs
-          : null) ??
-        (startedTurnState ? completedTurn.completedAtMs - startedTurnState.startedAtMs : null)
-
-      const durationMs = typeof rawDurationMs === 'number' ? Math.max(0, rawDurationMs) : 0
-      setTurnSummaryForThread(completedTurn.threadId, {
-        turnId: completedTurn.turnId,
-        durationMs,
-      })
-      setTurnActivityForThread(completedTurn.threadId, null)
-      markThreadUnreadByEvent(completedTurn.threadId)
-      if (!shouldRetryWithFallback) {
-        clearPendingTurnRequest(completedTurn.threadId)
-        void processQueuedMessages(completedTurn.threadId)
-      }
-    }
-
-    if (turnErrorMessage) {
-      const failedThreadId = completedTurn?.threadId || extractThreadIdFromNotification(notification)
-      if (failedThreadId) {
-        updateLedgerThreadState(failedThreadId, (current) => ({
-          ...current,
-          phase: 'failed',
-        }))
-        setTurnErrorForThread(failedThreadId, turnErrorMessage)
-      }
-      error.value = turnErrorMessage
-      if (failedThreadId && shouldRetryWithFallback) {
-        void retryPendingTurnWithFallback(failedThreadId)
-      }
-    } else if (completedTurn) {
-      updateLedgerThreadState(completedTurn.threadId, (current) => ({
-        ...current,
-        phase: current.finalizedSnapshot ? 'finalizing' : 'settled',
-      }))
-      setTurnErrorForThread(completedTurn.threadId, null)
-    }
-
-    const notificationErrorMessage = readNotificationErrorMessage(notification)
-    if (notificationErrorMessage) {
-      const errorThreadId = extractThreadIdFromNotification(notification)
-      if (errorThreadId) {
-        setTurnErrorForThread(errorThreadId, notificationErrorMessage)
-      }
-      error.value = notificationErrorMessage
-      if (selectedModelId.value !== MODEL_FALLBACK_ID && isUnsupportedChatGptModelError(new Error(notificationErrorMessage))) {
-        if (errorThreadId) {
-          void retryPendingTurnWithFallback(errorThreadId)
-        } else {
-          void applyFallbackModelSelection()
-        }
-      }
-    }
-
-    const notificationThreadId = extractThreadIdFromNotification(notification)
-    if (!notificationThreadId || notificationThreadId !== selectedThreadId.value) return
-
-    const startedAgentMessageId = readAgentMessageStartedId(notification)
-    if (startedAgentMessageId) {
-      clearActiveLiveTextSegment(notificationThreadId)
-    }
-
-    const liveAgentMessageDelta = readAgentMessageDelta(notification)
-    if (liveAgentMessageDelta) {
-      appendLiveTextSegment(
-        notificationThreadId,
-        'assistant',
-        liveAgentMessageDelta.messageId,
-        liveAgentMessageDelta.delta,
-      )
-    }
-
-    const completedAgentMessage = readAgentMessageCompleted(notification)
-    if (completedAgentMessage) {
-      if (!hasLiveTextSegmentsForItem(notificationThreadId, 'assistant', completedAgentMessage.itemId)) {
-        appendLiveTextSegment(
-          notificationThreadId,
-          'assistant',
-          completedAgentMessage.itemId,
-          completedAgentMessage.text,
-        )
-      }
-      clearActiveLiveTextSegment(notificationThreadId)
-    }
-
-    const startedReasoningItemId = readReasoningStartedItemId(notification)
-    if (startedReasoningItemId) {
-      activeReasoningItemId = startedReasoningItemId
-      clearActiveLiveTextSegment(notificationThreadId)
-    }
-
-    const liveReasoningDelta = readReasoningDelta(notification)
-    if (liveReasoningDelta) {
-      appendLiveTextSegment(
-        notificationThreadId,
-        'reasoning',
-        liveReasoningDelta.itemId,
-        liveReasoningDelta.delta,
-      )
-    }
-
-    const sectionBreakItemId = readReasoningSectionBreakItemId(notification)
-    if (sectionBreakItemId) {
-      const activeSegment = getLedgerThreadState(notificationThreadId).activeSegment
-      if (activeSegment?.kind === 'reasoning' && activeSegment.itemId === sectionBreakItemId) {
-        appendLiveTextSegment(notificationThreadId, 'reasoning', sectionBreakItemId, '\n\n')
-      }
-    }
-
-    const completedReasoningItemId = readReasoningCompletedItemId(notification)
-    if (completedReasoningItemId) {
-      if (completedReasoningItemId === activeReasoningItemId) {
-        activeReasoningItemId = ''
-      }
-      clearActiveLiveTextSegment(notificationThreadId)
-    }
-
-    const commandStarted = readCommandExecutionStarted(notification)
-    if (commandStarted) {
-      clearActiveLiveTextSegment(notificationThreadId)
-      appendLiveEvent(notificationThreadId, { type: 'command_snapshot', message: commandStarted })
-      setTurnActivityForThread(notificationThreadId, { label: 'Running command', details: [commandStarted.commandExecution?.command ?? ''] })
-    }
-
-    const toolStarted = readToolCallStarted(notification)
-    if (toolStarted) {
-      clearActiveLiveTextSegment(notificationThreadId)
-      appendLiveEvent(notificationThreadId, { type: 'tool_snapshot', message: toolStarted })
-      setTurnActivityForThread(notificationThreadId, { label: 'Calling', details: [] })
-    }
-
-    const commandDelta = readCommandOutputDelta(notification)
-    if (commandDelta) {
-      appendLiveEvent(notificationThreadId, { type: 'command_output_delta', itemId: commandDelta.itemId, delta: commandDelta.delta })
-    }
-
-    const commandCompleted = readCommandExecutionCompleted(notification)
-    if (commandCompleted) {
-      clearActiveLiveTextSegment(notificationThreadId)
-      appendLiveEvent(notificationThreadId, { type: 'command_snapshot', message: commandCompleted })
-    }
-
-    const toolCompleted = readToolCallCompleted(notification)
-    if (toolCompleted) {
-      clearActiveLiveTextSegment(notificationThreadId)
-      appendLiveEvent(notificationThreadId, { type: 'tool_snapshot', message: toolCompleted })
-    }
-
-    if (isAgentContentEvent(notification)) {
-      if (shouldAutoScrollOnNextAgentEvent && selectedThreadId.value) {
-        setThreadScrollState(selectedThreadId.value, {
-          scrollTop: 0,
-          isAtBottom: true,
-          scrollRatio: 1,
-        })
-      }
-    }
-
-    if (notification.method === 'turn/completed') {
-      activeReasoningItemId = ''
-      shouldAutoScrollOnNextAgentEvent = false
-      clearActiveLiveTextSegment(notificationThreadId)
-      const completedTurnId =
-        completedTurn?.turnId ||
-        readString(asRecord(asRecord(notification.params)?.turn)?.id) ||
-        getLedgerThreadState(notificationThreadId).activeTurnId ||
-        `${notificationThreadId}:unknown`
-      setFinalizedTurnSnapshotForThread(
-        notificationThreadId,
-        buildFinalizedTurnSnapshot(notificationThreadId, completedTurnId),
-      )
-      clearLiveLedger(notificationThreadId)
-      updateLedgerThreadState(notificationThreadId, (current) => ({
-        ...current,
-        phase: 'finalizing',
-        activeTurnId: '',
-      }))
-      const completedThreadId = extractThreadIdFromNotification(notification)
-      if (completedThreadId) {
-        setTurnActivityForThread(completedThreadId, null)
-        markThreadUnreadByEvent(completedThreadId)
-        if (!shouldRetryWithFallback) {
-          clearPendingTurnRequest(completedThreadId)
-          void processQueuedMessages(completedThreadId)
-        }
-      }
-    }
-
+  const activeReasoningItemIdRef = {
+    get value() {
+      return activeReasoningItemId
+    },
+    set value(nextValue: string) {
+      activeReasoningItemId = nextValue
+    },
   }
-
-  function queueEventDrivenSync(notification: RpcNotification): void {
-    const threadId = extractThreadIdFromNotification(notification)
-    const method = notification.method
-    const shouldRefreshThreadMessages =
-      method === 'turn/completed'
-
-    const shouldRefreshThreads =
-      method === 'thread/started'
-      || method === 'thread/archived'
-      || method === 'thread/unarchived'
-      || method === 'thread/closed'
-      || method === 'thread/name/updated'
-
-    if (threadId && shouldRefreshThreadMessages) {
-      pendingThreadMessageRefresh.add(threadId)
-    }
-
-    if (shouldRefreshThreads) {
-      pendingThreadsRefresh = true
-    }
-
-    if (!shouldRefreshThreadMessages && !shouldRefreshThreads) return
-
-    if (eventSyncTimer !== null || typeof window === 'undefined') return
-    eventSyncTimer = window.setTimeout(() => {
-      eventSyncTimer = null
-      void syncFromNotifications()
-    }, EVENT_SYNC_DEBOUNCE_MS)
-  }
+  const {
+    retryPendingTurnWithFallback,
+    applyRealtimeUpdates,
+    queueEventDrivenSync,
+  } = createThreadRealtime({
+    selectedThreadId,
+    selectedModelId,
+    threadTitleById,
+    resumedThreadById,
+    pendingTurnRequestByThreadId,
+    error,
+    eventUnreadByThreadId,
+    modelFallbackId: MODEL_FALLBACK_ID,
+    pendingTurnStartsById,
+    activeReasoningItemIdRef,
+    shouldAutoScrollRef,
+    pendingThreadsRefreshRef,
+    pendingThreadMessageRefreshRef,
+    eventSyncTimerRef,
+    eventSyncDebounceMs: EVENT_SYNC_DEBOUNCE_MS,
+    applyThreadFlags: () => applyThreadFlags(),
+    setPendingTurnRequest,
+    clearPendingTurnRequest,
+    processQueuedMessages,
+    syncFromNotifications,
+    applyFallbackModelSelection,
+    buildPendingTurnDetails,
+    buildProtocolTurnInput,
+    isUnsupportedChatGptModelError,
+    handleServerRequestNotification,
+    setTurnActivityForThread,
+    setTurnSummaryForThread,
+    setTurnErrorForThread,
+    markThreadUnreadByEvent,
+    setThreadScrollState,
+    getLedgerThreadState,
+    updateLedgerThreadState,
+    setConfirmedTranscriptForThread,
+    setFinalizedTurnSnapshotForThread,
+    buildFinalizedTurnSnapshot,
+    clearActiveLiveTextSegment,
+    appendLiveTextSegment,
+    hasLiveTextSegmentsForItem,
+    clearLiveLedger,
+    appendLiveEvent,
+    readString,
+    asRecord,
+  })
 
   async function archiveThreadById(threadId: string) {
     try {
@@ -1120,114 +825,44 @@ export function useDesktopState() {
       error.value = unknownError instanceof Error ? unknownError.message : 'Unknown application error'
     }
   }
-
-  function startPolling(): void {
-    if (typeof window === 'undefined') return
-
-    if (stopNotificationStream) return
-    if (isAutoRefreshEnabled.value) {
-      startAutoRefreshTimer()
-    }
-    void loadPendingServerRequestsFromBridge()
-    stopNotificationStream = subscribeCodexNotifications((notification) => {
-      applyRealtimeUpdates(notification)
-      queueEventDrivenSync(notification)
-    })
+  const stopNotificationStreamRef = {
+    get value() {
+      return stopNotificationStream
+    },
+    set value(nextValue: (() => void) | null) {
+      stopNotificationStream = nextValue
+    },
   }
-
-  async function loadPendingServerRequestsFromBridge(): Promise<void> {
-    try {
-      const rows = await getPendingServerRequests()
-      for (const row of rows) {
-        const request = normalizeServerRequest(row, GLOBAL_SERVER_REQUEST_SCOPE)
-        if (request) {
-          upsertPendingServerRequest(request)
-        }
-      }
-    } catch {
-      // Keep UI usable when pending request endpoint is temporarily unavailable.
-    }
-  }
-
-  async function respondToPendingServerRequest(reply: UiServerRequestReply): Promise<void> {
-    try {
-      await replyToServerRequest(reply.id, {
-        result: reply.result,
-        error: reply.error,
-      })
-      removePendingServerRequestById(reply.id)
-    } catch (unknownError) {
-      error.value = unknownError instanceof Error ? unknownError.message : 'Failed to reply to server request'
-    }
-  }
-
-  function stopAutoRefreshTimer(options: { updatePreference?: boolean } = {}): void {
-    const updatePreference = options.updatePreference ?? true
-
-    if (autoRefreshIntervalTimer !== null && typeof window !== 'undefined') {
-      window.clearInterval(autoRefreshIntervalTimer)
-      autoRefreshIntervalTimer = null
-    }
-    if (autoRefreshCountdownTimer !== null && typeof window !== 'undefined') {
-      window.clearInterval(autoRefreshCountdownTimer)
-      autoRefreshCountdownTimer = null
-    }
-    if (updatePreference) {
-      isAutoRefreshEnabled.value = false
-      saveAutoRefreshEnabled(false)
-    }
-    autoRefreshSecondsLeft.value = Math.floor(AUTO_REFRESH_INTERVAL_MS / 1000)
-  }
-
-  function startAutoRefreshTimer(): void {
-    if (typeof window === 'undefined') return
-    if (autoRefreshIntervalTimer !== null || autoRefreshCountdownTimer !== null) return
-
-    isAutoRefreshEnabled.value = true
-    saveAutoRefreshEnabled(true)
-    autoRefreshSecondsLeft.value = Math.floor(AUTO_REFRESH_INTERVAL_MS / 1000)
-
-    autoRefreshIntervalTimer = window.setInterval(() => {
-      autoRefreshSecondsLeft.value = Math.floor(AUTO_REFRESH_INTERVAL_MS / 1000)
-      void syncThreadStatus()
-    }, AUTO_REFRESH_INTERVAL_MS)
-
-    autoRefreshCountdownTimer = window.setInterval(() => {
-      autoRefreshSecondsLeft.value = Math.max(0, autoRefreshSecondsLeft.value - 1)
-    }, 1000)
-  }
-
-  function toggleAutoRefreshTimer(): void {
-    if (isAutoRefreshEnabled.value) {
-      stopAutoRefreshTimer()
-      return
-    }
-    startAutoRefreshTimer()
-  }
-
-  function stopPolling(): void {
-    stopAutoRefreshTimer({ updatePreference: false })
-
-    if (stopNotificationStream) {
-      stopNotificationStream()
-      stopNotificationStream = null
-    }
-
-    pendingThreadsRefresh = false
-    pendingThreadMessageRefresh.clear()
-    pendingTurnStartsById.clear()
-    if (eventSyncTimer !== null && typeof window !== 'undefined') {
-      window.clearTimeout(eventSyncTimer)
-      eventSyncTimer = null
-    }
-    activeReasoningItemId = ''
-    shouldAutoScrollOnNextAgentEvent = false
-    ledgerByThreadId.value = {}
-    turnActivityByThreadId.value = {}
-    turnSummaryByThreadId.value = {}
-    turnErrorByThreadId.value = {}
-    queuedMessagesByThreadId.value = {}
-  }
+  const {
+    respondToPendingServerRequest,
+    toggleAutoRefreshTimer,
+    startPolling,
+    stopPolling,
+  } = createThreadPolling({
+    isAutoRefreshEnabled,
+    autoRefreshSecondsLeft,
+    ledgerByThreadId,
+    turnActivityByThreadId,
+    turnSummaryByThreadId,
+    turnErrorByThreadId,
+    queuedMessagesByThreadId,
+    error,
+    globalServerRequestScope: GLOBAL_SERVER_REQUEST_SCOPE,
+    autoRefreshIntervalMs: AUTO_REFRESH_INTERVAL_MS,
+    saveAutoRefreshEnabled,
+    upsertPendingServerRequest,
+    removePendingServerRequestById,
+    applyRealtimeUpdates,
+    queueEventDrivenSync,
+    syncThreadStatus,
+    pendingThreadsRefreshRef,
+    pendingThreadMessageRefreshRef,
+    pendingTurnStartsById,
+    eventSyncTimerRef,
+    stopNotificationStreamRef,
+    activeReasoningItemIdRef,
+    shouldAutoScrollRef,
+  })
 
   const selectedThreadQueuedMessages = computed<QueuedMessage[]>(() => {
     const threadId = selectedThreadId.value
