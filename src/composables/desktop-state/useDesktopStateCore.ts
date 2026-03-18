@@ -39,10 +39,12 @@ import type {
   UiThread,
 } from '../../types/codex'
 import {
+  areCommandExecutionsEqual as areCommandExecutionsEqualHelper,
   areFileAttachmentsEqual as areFileAttachmentsEqualHelper,
   areTurnActivitiesEqual as areTurnActivitiesEqualHelper,
   areTurnSummariesEqual as areTurnSummariesEqualHelper,
   buildTextWithAttachments as buildTextWithAttachmentsHelper,
+  formatTurnDuration as formatTurnDurationHelper,
   insertTurnSummaryMessage as insertTurnSummaryMessageHelper,
   mergeMessages as mergeMessagesHelper,
   normalizeMessageText as normalizeMessageTextHelper,
@@ -81,234 +83,30 @@ import {
   saveThreadScrollStateMap as saveThreadScrollStateMapHelper,
 } from './storage'
 
-function flattenThreads(groups: UiProjectGroup[]): UiThread[] {
-  return groups.flatMap((group) => group.threads)
-}
-
-const READ_STATE_STORAGE_KEY = 'codex-web-local.thread-read-state.v1'
-const SCROLL_STATE_STORAGE_KEY = 'codex-web-local.thread-scroll-state.v1'
-const SELECTED_THREAD_STORAGE_KEY = 'codex-web-local.selected-thread-id.v1'
-const PROJECT_ORDER_STORAGE_KEY = 'codex-web-local.project-order.v1'
-const PROJECT_DISPLAY_NAME_STORAGE_KEY = 'codex-web-local.project-display-name.v1'
-const AUTO_REFRESH_ENABLED_STORAGE_KEY = 'codex-web-local.auto-refresh-enabled.v1'
 const EVENT_SYNC_DEBOUNCE_MS = 220
 const AUTO_REFRESH_INTERVAL_MS = 4000
 const REASONING_EFFORT_OPTIONS: ReasoningEffort[] = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh']
 const GLOBAL_SERVER_REQUEST_SCOPE = '__global__'
 const MODEL_FALLBACK_ID = 'gpt-5.2-codex'
-
-function loadReadStateMap(): Record<string, string> {
-  if (typeof window === 'undefined') return {}
-
-  try {
-    const raw = window.localStorage.getItem(READ_STATE_STORAGE_KEY)
-    if (!raw) return {}
-
-    const parsed = JSON.parse(raw) as unknown
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {}
-    return parsed as Record<string, string>
-  } catch {
-    return {}
-  }
-}
-
-function saveReadStateMap(state: Record<string, string>): void {
-  if (typeof window === 'undefined') return
-  window.localStorage.setItem(READ_STATE_STORAGE_KEY, JSON.stringify(state))
-}
-
-function loadAutoRefreshEnabled(): boolean {
-  if (typeof window === 'undefined') return false
-  return window.localStorage.getItem(AUTO_REFRESH_ENABLED_STORAGE_KEY) === '1'
-}
-
-function saveAutoRefreshEnabled(value: boolean): void {
-  if (typeof window === 'undefined') return
-  window.localStorage.setItem(AUTO_REFRESH_ENABLED_STORAGE_KEY, value ? '1' : '0')
-}
-
-function clamp(value: number, minValue: number, maxValue: number): number {
-  return Math.min(Math.max(value, minValue), maxValue)
-}
-
-function normalizeThreadScrollState(value: unknown): ThreadScrollState | null {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return null
-
-  const rawState = value as Record<string, unknown>
-  if (typeof rawState.scrollTop !== 'number' || !Number.isFinite(rawState.scrollTop)) return null
-  if (typeof rawState.isAtBottom !== 'boolean') return null
-
-  const normalized: ThreadScrollState = {
-    scrollTop: Math.max(0, rawState.scrollTop),
-    isAtBottom: rawState.isAtBottom,
-  }
-
-  if (typeof rawState.scrollRatio === 'number' && Number.isFinite(rawState.scrollRatio)) {
-    normalized.scrollRatio = clamp(rawState.scrollRatio, 0, 1)
-  }
-
-  return normalized
-}
-
-function loadThreadScrollStateMap(): Record<string, ThreadScrollState> {
-  if (typeof window === 'undefined') return {}
-
-  try {
-    const raw = window.localStorage.getItem(SCROLL_STATE_STORAGE_KEY)
-    if (!raw) return {}
-
-    const parsed = JSON.parse(raw) as unknown
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {}
-
-    const normalizedMap: Record<string, ThreadScrollState> = {}
-    for (const [threadId, state] of Object.entries(parsed as Record<string, unknown>)) {
-      if (!threadId) continue
-      const normalizedState = normalizeThreadScrollState(state)
-      if (normalizedState) {
-        normalizedMap[threadId] = normalizedState
-      }
-    }
-    return normalizedMap
-  } catch {
-    return {}
-  }
-}
-
-function saveThreadScrollStateMap(state: Record<string, ThreadScrollState>): void {
-  if (typeof window === 'undefined') return
-  window.localStorage.setItem(SCROLL_STATE_STORAGE_KEY, JSON.stringify(state))
-}
-
-function loadSelectedThreadId(): string {
-  if (typeof window === 'undefined') return ''
-  const raw = window.localStorage.getItem(SELECTED_THREAD_STORAGE_KEY)
-  return raw ?? ''
-}
-
-function saveSelectedThreadId(threadId: string): void {
-  if (typeof window === 'undefined') return
-  if (!threadId) {
-    window.localStorage.removeItem(SELECTED_THREAD_STORAGE_KEY)
-    return
-  }
-  window.localStorage.setItem(SELECTED_THREAD_STORAGE_KEY, threadId)
-}
-
-function loadProjectOrder(): string[] {
-  if (typeof window === 'undefined') return []
-
-  try {
-    const raw = window.localStorage.getItem(PROJECT_ORDER_STORAGE_KEY)
-    if (!raw) return []
-
-    const parsed = JSON.parse(raw) as unknown
-    if (!Array.isArray(parsed)) return []
-    const order: string[] = []
-    for (const item of parsed) {
-      if (typeof item === 'string' && item.length > 0 && !order.includes(item)) {
-        order.push(item)
-      }
-    }
-    return order
-  } catch {
-    return []
-  }
-}
-
-function saveProjectOrder(order: string[]): void {
-  if (typeof window === 'undefined') return
-  window.localStorage.setItem(PROJECT_ORDER_STORAGE_KEY, JSON.stringify(order))
-}
-
-function loadProjectDisplayNames(): Record<string, string> {
-  if (typeof window === 'undefined') return {}
-
-  try {
-    const raw = window.localStorage.getItem(PROJECT_DISPLAY_NAME_STORAGE_KEY)
-    if (!raw) return {}
-
-    const parsed = JSON.parse(raw) as unknown
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {}
-
-    const displayNames: Record<string, string> = {}
-    for (const [projectName, displayName] of Object.entries(parsed as Record<string, unknown>)) {
-      if (typeof projectName === 'string' && projectName.length > 0 && typeof displayName === 'string') {
-        displayNames[projectName] = displayName
-      }
-    }
-    return displayNames
-  } catch {
-    return {}
-  }
-}
-
-function saveProjectDisplayNames(displayNames: Record<string, string>): void {
-  if (typeof window === 'undefined') return
-  window.localStorage.setItem(PROJECT_DISPLAY_NAME_STORAGE_KEY, JSON.stringify(displayNames))
-}
-
-function mergeProjectOrder(previousOrder: string[], incomingGroups: UiProjectGroup[]): string[] {
-  const nextOrder: string[] = []
-
-  for (const projectName of previousOrder) {
-    if (!nextOrder.includes(projectName)) {
-      nextOrder.push(projectName)
-    }
-  }
-
-  for (const group of incomingGroups) {
-    if (!nextOrder.includes(group.projectName)) {
-      nextOrder.push(group.projectName)
-    }
-  }
-
-  return areStringArraysEqual(previousOrder, nextOrder) ? previousOrder : nextOrder
-}
-
-function orderGroupsByProjectOrder(incoming: UiProjectGroup[], projectOrder: string[]): UiProjectGroup[] {
-  const incomingByName = new Map(incoming.map((group) => [group.projectName, group]))
-  const ordered: UiProjectGroup[] = projectOrder
-    .map((projectName) => incomingByName.get(projectName) ?? { projectName, threads: [] })
-
-  for (const group of incoming) {
-    if (!projectOrder.includes(group.projectName)) {
-      ordered.push(group)
-    }
-  }
-
-  return ordered
-}
-
-function areStringArraysEqual(first?: string[], second?: string[]): boolean {
-  const left = Array.isArray(first) ? first : []
-  const right = Array.isArray(second) ? second : []
-  if (left.length !== right.length) return false
-  for (let index = 0; index < left.length; index += 1) {
-    if (left[index] !== right[index]) return false
-  }
-  return true
-}
-
-function reorderStringArray(items: string[], fromIndex: number, toIndex: number): string[] {
-  if (fromIndex < 0 || fromIndex >= items.length || toIndex < 0 || toIndex >= items.length) {
-    return items
-  }
-
-  if (fromIndex === toIndex) {
-    return items
-  }
-
-  const next = [...items]
-  const [moved] = next.splice(fromIndex, 1)
-  next.splice(toIndex, 0, moved)
-  return next
-}
-
-function areCommandExecutionsEqual(first?: CommandExecutionData, second?: CommandExecutionData): boolean {
-  if (!first && !second) return true
-  if (!first || !second) return false
-  return first.status === second.status && first.aggregatedOutput === second.aggregatedOutput && first.exitCode === second.exitCode
-}
+const flattenThreads = flattenThreadsHelper
+const loadReadStateMap = loadReadStateMapHelper
+const saveReadStateMap = saveReadStateMapHelper
+const loadAutoRefreshEnabled = loadAutoRefreshEnabledHelper
+const saveAutoRefreshEnabled = saveAutoRefreshEnabledHelper
+const clamp = clampHelper
+const loadThreadScrollStateMap = loadThreadScrollStateMapHelper
+const saveThreadScrollStateMap = saveThreadScrollStateMapHelper
+const loadSelectedThreadId = loadSelectedThreadIdHelper
+const saveSelectedThreadId = saveSelectedThreadIdHelper
+const loadProjectOrder = loadProjectOrderHelper
+const saveProjectOrder = saveProjectOrderHelper
+const loadProjectDisplayNames = loadProjectDisplayNamesHelper
+const saveProjectDisplayNames = saveProjectDisplayNamesHelper
+const mergeProjectOrder = mergeProjectOrderHelper
+const orderGroupsByProjectOrder = orderGroupsByProjectOrderHelper
+const areStringArraysEqual = areStringArraysEqualHelper
+const reorderStringArray = reorderStringArrayHelper
+const areCommandExecutionsEqual = areCommandExecutionsEqualHelper
 
 function isUnsupportedChatGptModelError(error: unknown): boolean {
   if (!(error instanceof Error)) return false
@@ -549,296 +347,20 @@ type LedgerThreadState = {
   nextSegmentCount: number
 }
 
-const WORKED_MESSAGE_TYPE = 'worked'
-
-function parseIsoTimestamp(value: string): number | null {
-  if (!value) return null
-  const ms = new Date(value).getTime()
-  return Number.isNaN(ms) ? null : ms
-}
-
-function formatTurnDuration(durationMs: number): string {
-  if (!Number.isFinite(durationMs) || durationMs <= 0) {
-    return '<1s'
-  }
-
-  const totalSeconds = Math.max(1, Math.round(durationMs / 1000))
-  const hours = Math.floor(totalSeconds / 3600)
-  const minutes = Math.floor((totalSeconds % 3600) / 60)
-  const seconds = totalSeconds % 60
-  const parts: string[] = []
-
-  if (hours > 0) {
-    parts.push(`${hours}h`)
-  }
-
-  if (minutes > 0 || hours > 0) {
-    parts.push(`${minutes}m`)
-  }
-
-  const displaySeconds = seconds > 0 || parts.length === 0 ? seconds : 0
-  parts.push(`${displaySeconds}s`)
-  return parts.join(' ')
-}
-
-function areTurnSummariesEqual(first?: TurnSummaryState, second?: TurnSummaryState): boolean {
-  if (!first && !second) return true
-  if (!first || !second) return false
-  return first.turnId === second.turnId && first.durationMs === second.durationMs
-}
-
-function areTurnActivitiesEqual(first?: TurnActivityState, second?: TurnActivityState): boolean {
-  if (!first && !second) return true
-  if (!first || !second) return false
-  if (first.label !== second.label) return false
-  if (first.details.length !== second.details.length) return false
-  for (let index = 0; index < first.details.length; index += 1) {
-    if (first.details[index] !== second.details[index]) return false
-  }
-  return true
-}
-
-function buildTurnSummaryMessage(summary: TurnSummaryState): UiMessage {
-  return {
-    id: `turn-summary:${summary.turnId}`,
-    role: 'system',
-    text: `Worked for ${formatTurnDuration(summary.durationMs)}`,
-    messageType: WORKED_MESSAGE_TYPE,
-  }
-}
-
-function findLastAssistantMessageIndex(messages: UiMessage[]): number {
-  for (let index = messages.length - 1; index >= 0; index -= 1) {
-    if (messages[index].role === 'assistant') {
-      return index
-    }
-  }
-  return -1
-}
-
-function insertTurnSummaryMessage(messages: UiMessage[], summary: TurnSummaryState): UiMessage[] {
-  const summaryMessage = buildTurnSummaryMessage(summary)
-  const sanitizedMessages = messages.filter((message) => message.messageType !== WORKED_MESSAGE_TYPE)
-  const insertIndex = findLastAssistantMessageIndex(sanitizedMessages)
-  if (insertIndex < 0) {
-    return [...sanitizedMessages, summaryMessage]
-  }
-  const next = [...sanitizedMessages]
-  next.splice(insertIndex, 0, summaryMessage)
-  return next
-}
-
-function projectLiveTurnEvents(events: LiveTurnEvent[]): UiMessage[] {
-  const projected: UiMessage[] = []
-
-  for (const event of events) {
-    if (event.type === 'text_delta') {
-      const existingIndex = projected.findIndex((message) => message.id === event.segmentId)
-      if (existingIndex >= 0) {
-        const existing = projected[existingIndex]
-        projected[existingIndex] = {
-          ...existing,
-          text: `${existing.text}${event.delta}`,
-        }
-        continue
-      }
-
-      projected.push({
-        id: event.segmentId,
-        role: 'assistant',
-        text: event.delta,
-        messageType: event.kind === 'reasoning' ? 'reasoning.live' : 'agentMessage.live',
-      })
-      continue
-    }
-
-    if (event.type === 'command_snapshot' || event.type === 'tool_snapshot') {
-      const next = upsertMessage(projected, event.message)
-      projected.splice(0, projected.length, ...next)
-      continue
-    }
-
-    if (event.type === 'command_output_delta') {
-      const currentIndex = projected.findIndex((message) => message.id === event.itemId)
-      if (currentIndex < 0) continue
-      const current = projected[currentIndex]
-      if (!current.commandExecution) continue
-      projected[currentIndex] = {
-        ...current,
-        commandExecution: {
-          ...current.commandExecution,
-          aggregatedOutput: `${current.commandExecution.aggregatedOutput}${event.delta}`,
-        },
-      }
-    }
-  }
-
-  return projected
-}
-
-function isWorkedMessage(message: UiMessage): boolean {
-  return message.messageType === 'commandExecution' || message.messageType === 'toolCall'
-}
-
-function shouldPreserveFinalizedSnapshot(
-  finalizedSnapshot: FinalizedTurnSnapshotState | null,
-  confirmedTranscript: UiMessage[],
-): boolean {
-  if (!finalizedSnapshot) return false
-
-  const finalizedWorkedMessages = finalizedSnapshot.messages.filter(isWorkedMessage)
-  if (finalizedWorkedMessages.length === 0) return false
-
-  const confirmedWorkedIds = new Set(
-    confirmedTranscript
-      .filter(isWorkedMessage)
-      .map((message) => message.id),
-  )
-
-  return finalizedWorkedMessages.some((message) => !confirmedWorkedIds.has(message.id))
-}
-
-function omitKey<TValue>(record: Record<string, TValue>, key: string): Record<string, TValue> {
-  if (!(key in record)) return record
-  const next = { ...record }
-  delete next[key]
-  return next
-}
-
-function areThreadFieldsEqual(first: UiThread, second: UiThread): boolean {
-  return (
-    first.id === second.id &&
-    first.title === second.title &&
-    first.projectName === second.projectName &&
-    first.cwd === second.cwd &&
-    first.createdAtIso === second.createdAtIso &&
-    first.updatedAtIso === second.updatedAtIso &&
-    first.preview === second.preview &&
-    first.unread === second.unread &&
-    first.inProgress === second.inProgress
-  )
-}
-
-function areThreadArraysEqual(first: UiThread[], second: UiThread[]): boolean {
-  if (first.length !== second.length) return false
-  for (let index = 0; index < first.length; index += 1) {
-    if (first[index] !== second[index]) return false
-  }
-  return true
-}
-
-function areGroupArraysEqual(first: UiProjectGroup[], second: UiProjectGroup[]): boolean {
-  if (first.length !== second.length) return false
-  for (let index = 0; index < first.length; index += 1) {
-    if (first[index] !== second[index]) return false
-  }
-  return true
-}
-
-function pruneThreadStateMap<T>(stateMap: Record<string, T>, threadIds: Set<string>): Record<string, T> {
-  const nextEntries = Object.entries(stateMap).filter(([threadId]) => threadIds.has(threadId))
-  if (nextEntries.length === Object.keys(stateMap).length) {
-    return stateMap
-  }
-  return Object.fromEntries(nextEntries) as Record<string, T>
-}
-
-function mergeThreadGroups(
-  previous: UiProjectGroup[],
-  incoming: UiProjectGroup[],
-): UiProjectGroup[] {
-  const previousGroupsByName = new Map(previous.map((group) => [group.projectName, group]))
-  const mergedGroups: UiProjectGroup[] = incoming.map((incomingGroup) => {
-    const previousGroup = previousGroupsByName.get(incomingGroup.projectName)
-    const previousThreadsById = new Map(previousGroup?.threads.map((thread) => [thread.id, thread]) ?? [])
-
-    const mergedThreads = incomingGroup.threads.map((incomingThread) => {
-      const previousThread = previousThreadsById.get(incomingThread.id)
-      if (previousThread && areThreadFieldsEqual(previousThread, incomingThread)) {
-        return previousThread
-      }
-      return incomingThread
-    })
-
-    if (
-      previousGroup &&
-      previousGroup.projectName === incomingGroup.projectName &&
-      areThreadArraysEqual(previousGroup.threads, mergedThreads)
-    ) {
-      return previousGroup
-    }
-
-    return {
-      projectName: incomingGroup.projectName,
-      threads: mergedThreads,
-    }
-  })
-
-  return areGroupArraysEqual(previous, mergedGroups) ? previous : mergedGroups
-}
-
-function mergeIncomingWithLocalInProgressThreads(
-  previous: UiProjectGroup[],
-  incoming: UiProjectGroup[],
-  isThreadInProgress: (threadId: string) => boolean,
-): UiProjectGroup[] {
-  const incomingThreadIds = new Set(flattenThreads(incoming).map((thread) => thread.id))
-  const localInProgressThreads = flattenThreads(previous).filter(
-    (thread) => isThreadInProgress(thread.id) && !incomingThreadIds.has(thread.id),
-  )
-
-  if (localInProgressThreads.length === 0) {
-    return incoming
-  }
-
-  const incomingByProjectName = new Map(incoming.map((group) => [group.projectName, group]))
-  const merged: UiProjectGroup[] = incoming.map((group) => ({
-    projectName: group.projectName,
-    threads: [...group.threads],
-  }))
-
-  for (const thread of localInProgressThreads) {
-    const existingGroup = incomingByProjectName.get(thread.projectName)
-    if (existingGroup) {
-      const mergedGroupIndex = merged.findIndex((group) => group.projectName === thread.projectName)
-      if (mergedGroupIndex >= 0) {
-        merged[mergedGroupIndex] = {
-          projectName: merged[mergedGroupIndex].projectName,
-          threads: [thread, ...merged[mergedGroupIndex].threads],
-        }
-      }
-      continue
-    }
-
-    merged.push({
-      projectName: thread.projectName,
-      threads: [thread],
-    })
-  }
-
-  return merged
-}
-
-function toProjectName(cwd: string): string {
-  const parts = cwd.split('/').filter(Boolean)
-  return parts.at(-1) || cwd || 'unknown-project'
-}
-
-function toProjectNameFromWorkspaceRoot(value: string): string {
-  const normalized = value.replace(/\\/gu, '/')
-  const parts = normalized.split('/').filter(Boolean)
-  return parts.at(-1) || normalized
-}
-
-function toOptimisticThreadTitle(message: string): string {
-  const firstLine = message
-    .split('\n')
-    .map((line) => line.trim())
-    .find((line) => line.length > 0)
-
-  if (!firstLine) return 'Untitled thread'
-  return firstLine.slice(0, 80)
-}
+const parseIsoTimestamp = parseIsoTimestampHelper
+const formatTurnDuration = formatTurnDurationHelper
+const areTurnSummariesEqual = areTurnSummariesEqualHelper
+const areTurnActivitiesEqual = areTurnActivitiesEqualHelper
+const insertTurnSummaryMessage = insertTurnSummaryMessageHelper
+const projectLiveTurnEvents = projectLiveTurnEventsHelper
+const shouldPreserveFinalizedSnapshot = shouldPreserveFinalizedSnapshotHelper
+const omitKey = omitKeyHelper
+const mergeThreadGroups = mergeThreadGroupsHelper
+const mergeIncomingWithLocalInProgressThreads = mergeIncomingWithLocalInProgressThreadsHelper
+const pruneThreadStateMap = pruneThreadStateMapHelper
+const toProjectName = toProjectNameHelper
+const toProjectNameFromWorkspaceRoot = toProjectNameFromWorkspaceRootHelper
+const toOptimisticThreadTitle = toOptimisticThreadTitleHelper
 
 export function useDesktopState() {
   const projectGroups = ref<UiProjectGroup[]>([])
