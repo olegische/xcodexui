@@ -6,10 +6,10 @@ import {
   getCurrentModelConfig,
   getPendingServerRequests,
   getSkillsList,
-  getThreadDetail,
-  interruptThreadTurn,
+  interruptThreadTurnRaw,
+  readThreadRaw,
   replyToServerRequest,
-  rollbackThread,
+  rollbackThreadRaw,
   getThreadGroups,
   getWorkspaceRootsState,
   setDefaultModel,
@@ -20,10 +20,11 @@ import {
   resumeThread,
   startThread,
   subscribeCodexNotifications,
-  startThreadTurn,
+  startThreadTurnRaw,
   type RpcNotification,
   type SkillInfo,
 } from '../api/codexGateway'
+import { normalizeThreadMessagesV2, readThreadInProgressFromResponse } from '../api/normalizers/v2'
 import { IS_WASM_RUNTIME } from '../config/runtime'
 import type {
   CommandExecutionData,
@@ -341,12 +342,12 @@ function normalizeMessageText(value: string): string {
 }
 
 function areFileAttachmentsEqual(first?: UiFileAttachment[], second?: UiFileAttachment[]): boolean {
-  if (!first && !second) return true
-  if (!first || !second) return false
-  if (first.length !== second.length) return false
-  for (let index = 0; index < first.length; index += 1) {
-    if (first[index]?.label !== second[index]?.label) return false
-    if (first[index]?.path !== second[index]?.path) return false
+  const left = first ?? []
+  const right = second ?? []
+  if (left.length !== right.length) return false
+  for (let index = 0; index < left.length; index += 1) {
+    if (left[index]?.label !== right[index]?.label) return false
+    if (left[index]?.path !== right[index]?.path) return false
   }
   return true
 }
@@ -378,6 +379,44 @@ function removeRedundantLiveAgentMessages(previous: UiMessage[], incoming: UiMes
   })
 
   return next.length === previous.length ? previous : next
+}
+
+function buildTextWithAttachments(
+  prompt: string,
+  files: Array<{ label: string; path: string; fsPath: string }>,
+): string {
+  if (files.length === 0) return prompt
+  let prefix = '# Files mentioned by the user:\n'
+  for (const file of files) {
+    prefix += `\n## ${file.label}: ${file.path}\n`
+  }
+  return `${prefix}\n## My request for Codex:\n\n${prompt}\n`
+}
+
+function buildProtocolTurnInput(
+  text: string,
+  imageUrls: string[],
+  skills: Array<{ name: string; path: string }>,
+  fileAttachments: Array<{ label: string; path: string; fsPath: string }>,
+): Array<Record<string, unknown>> {
+  const finalText = buildTextWithAttachments(text, fileAttachments)
+  const input: Array<Record<string, unknown>> = [{ type: 'text', text: finalText }]
+
+  for (const imageUrl of imageUrls) {
+    const normalizedUrl = imageUrl.trim()
+    if (!normalizedUrl) continue
+    input.push({
+      type: 'image',
+      url: normalizedUrl,
+      image_url: normalizedUrl,
+    })
+  }
+
+  for (const skill of skills) {
+    input.push({ type: 'skill', name: skill.name, path: skill.path })
+  }
+
+  return input
 }
 
 function upsertMessage(previous: UiMessage[], nextMessage: UiMessage): UiMessage[] {
@@ -426,12 +465,46 @@ type TurnCompletedInfo = {
 type LiveTextSegmentState = {
   kind: 'assistant' | 'reasoning'
   itemId: string
-  messageId: string
+  segmentId: string
 }
 
 type FinalizedTurnSnapshotState = {
   turnId: string
   messages: UiMessage[]
+}
+
+type ChatPhase = 'idle' | 'live' | 'finalizing' | 'settled' | 'failed'
+
+type LiveTurnEvent =
+  | {
+    type: 'text_delta'
+    kind: LiveTextSegmentState['kind']
+    itemId: string
+    segmentId: string
+    delta: string
+  }
+  | {
+    type: 'command_snapshot'
+    message: UiMessage
+  }
+  | {
+    type: 'command_output_delta'
+    itemId: string
+    delta: string
+  }
+  | {
+    type: 'tool_snapshot'
+    message: UiMessage
+  }
+
+type LedgerThreadState = {
+  phase: ChatPhase
+  confirmedTranscript: UiMessage[]
+  liveEventLog: LiveTurnEvent[]
+  finalizedSnapshot: FinalizedTurnSnapshotState | null
+  activeTurnId: string
+  activeSegment: LiveTextSegmentState | null
+  nextSegmentCount: number
 }
 
 const WORKED_MESSAGE_TYPE = 'worked'
@@ -511,6 +584,76 @@ function insertTurnSummaryMessage(messages: UiMessage[], summary: TurnSummarySta
   const next = [...sanitizedMessages]
   next.splice(insertIndex, 0, summaryMessage)
   return next
+}
+
+function projectLiveTurnEvents(events: LiveTurnEvent[]): UiMessage[] {
+  const projected: UiMessage[] = []
+
+  for (const event of events) {
+    if (event.type === 'text_delta') {
+      const existingIndex = projected.findIndex((message) => message.id === event.segmentId)
+      if (existingIndex >= 0) {
+        const existing = projected[existingIndex]
+        projected[existingIndex] = {
+          ...existing,
+          text: `${existing.text}${event.delta}`,
+        }
+        continue
+      }
+
+      projected.push({
+        id: event.segmentId,
+        role: 'assistant',
+        text: event.delta,
+        messageType: event.kind === 'reasoning' ? 'reasoning.live' : 'agentMessage.live',
+      })
+      continue
+    }
+
+    if (event.type === 'command_snapshot' || event.type === 'tool_snapshot') {
+      const next = upsertMessage(projected, event.message)
+      projected.splice(0, projected.length, ...next)
+      continue
+    }
+
+    if (event.type === 'command_output_delta') {
+      const currentIndex = projected.findIndex((message) => message.id === event.itemId)
+      if (currentIndex < 0) continue
+      const current = projected[currentIndex]
+      if (!current.commandExecution) continue
+      projected[currentIndex] = {
+        ...current,
+        commandExecution: {
+          ...current.commandExecution,
+          aggregatedOutput: `${current.commandExecution.aggregatedOutput}${event.delta}`,
+        },
+      }
+    }
+  }
+
+  return projected
+}
+
+function isWorkedMessage(message: UiMessage): boolean {
+  return message.messageType === 'commandExecution' || message.messageType === 'toolCall'
+}
+
+function shouldPreserveFinalizedSnapshot(
+  finalizedSnapshot: FinalizedTurnSnapshotState | null,
+  confirmedTranscript: UiMessage[],
+): boolean {
+  if (!finalizedSnapshot) return false
+
+  const finalizedWorkedMessages = finalizedSnapshot.messages.filter(isWorkedMessage)
+  if (finalizedWorkedMessages.length === 0) return false
+
+  const confirmedWorkedIds = new Set(
+    confirmedTranscript
+      .filter(isWorkedMessage)
+      .map((message) => message.id),
+  )
+
+  return finalizedWorkedMessages.some((message) => !confirmedWorkedIds.has(message.id))
 }
 
 function omitKey<TValue>(record: Record<string, TValue>, key: string): Record<string, TValue> {
@@ -595,11 +738,11 @@ function mergeThreadGroups(
 function mergeIncomingWithLocalInProgressThreads(
   previous: UiProjectGroup[],
   incoming: UiProjectGroup[],
-  inProgressById: Record<string, boolean>,
+  isThreadInProgress: (threadId: string) => boolean,
 ): UiProjectGroup[] {
   const incomingThreadIds = new Set(flattenThreads(incoming).map((thread) => thread.id))
   const localInProgressThreads = flattenThreads(previous).filter(
-    (thread) => inProgressById[thread.id] === true && !incomingThreadIds.has(thread.id),
+    (thread) => isThreadInProgress(thread.id) && !incomingThreadIds.has(thread.id),
   )
 
   if (localInProgressThreads.length === 0) {
@@ -659,13 +802,7 @@ export function useDesktopState() {
   const projectGroups = ref<UiProjectGroup[]>([])
   const sourceGroups = ref<UiProjectGroup[]>([])
   const selectedThreadId = ref(loadSelectedThreadId())
-  const persistedMessagesByThreadId = ref<Record<string, UiMessage[]>>({})
-  const liveAgentMessagesByThreadId = ref<Record<string, UiMessage[]>>({})
-  const liveTextSegmentByThreadId = ref<Record<string, LiveTextSegmentState>>({})
-  const liveTextSegmentCountByThreadId = ref<Record<string, number>>({})
-  const finalizedTurnSnapshotByThreadId = ref<Record<string, FinalizedTurnSnapshotState>>({})
-  const liveCommandsByThreadId = ref<Record<string, UiMessage[]>>({})
-  const inProgressById = ref<Record<string, boolean>>({})
+  const ledgerByThreadId = ref<Record<string, LedgerThreadState>>({})
   type FileAttachment = { label: string; path: string; fsPath: string }
   type QueuedMessage = { id: string; text: string; imageUrls: string[]; skills: Array<{ name: string; path: string }>; fileAttachments: FileAttachment[] }
   type PendingTurnRequest = {
@@ -691,7 +828,6 @@ export function useDesktopState() {
   const turnSummaryByThreadId = ref<Record<string, TurnSummaryState>>({})
   const turnActivityByThreadId = ref<Record<string, TurnActivityState>>({})
   const turnErrorByThreadId = ref<Record<string, TurnErrorState>>({})
-  const activeTurnIdByThreadId = ref<Record<string, string>>({})
   const pendingServerRequestsByThreadId = ref<Record<string, UiServerRequest[]>>({})
   const pendingTurnRequestByThreadId = ref<Record<string, PendingTurnRequest>>({})
 
@@ -761,9 +897,9 @@ export function useDesktopState() {
     const pending = pendingTurnRequestByThreadId.value[threadId]
     if (!pending) return null
 
-    const persisted = persistedMessagesByThreadId.value[threadId] ?? []
-    const liveAgent = liveAgentMessagesByThreadId.value[threadId] ?? []
-    const liveCommands = liveCommandsByThreadId.value[threadId] ?? []
+    const ledger = getLedgerThreadState(threadId)
+    const persisted = ledger.confirmedTranscript
+    const liveMessages = projectLiveTurnEvents(ledger.liveEventLog)
     const latestPersistedUserMessage = [...persisted].reverse().find((message) => message.role === 'user')
 
     const pendingAttachments = pending.fileAttachments.map((file) => ({
@@ -780,8 +916,8 @@ export function useDesktopState() {
       return null
     }
 
-    const hasCurrentTurnLiveArtifacts = liveAgent.length > 0 || liveCommands.length > 0
-    if (!hasCurrentTurnLiveArtifacts && inProgressById.value[threadId] !== true) {
+    const hasCurrentTurnLiveArtifacts = liveMessages.length > 0
+    if (!hasCurrentTurnLiveArtifacts && !isThreadInProgress(threadId)) {
       return null
     }
 
@@ -798,15 +934,13 @@ export function useDesktopState() {
     const threadId = selectedThreadId.value
     if (!threadId) return []
 
-    const persisted = persistedMessagesByThreadId.value[threadId] ?? []
-    const finalizedSnapshot = finalizedTurnSnapshotByThreadId.value[threadId]
+    const ledger = getLedgerThreadState(threadId)
     const pendingUserMessage = selectedPendingUserMessage.value
-    const liveAgent = liveAgentMessagesByThreadId.value[threadId] ?? []
-    const liveCommands = liveCommandsByThreadId.value[threadId] ?? []
-    const baseMessages = finalizedSnapshot?.messages ?? persisted
+    const liveMessages = projectLiveTurnEvents(ledger.liveEventLog)
+    const baseMessages = ledger.finalizedSnapshot?.messages ?? ledger.confirmedTranscript
     const combined = pendingUserMessage
-      ? [...baseMessages, pendingUserMessage, ...liveCommands, ...liveAgent]
-      : [...baseMessages, ...liveCommands, ...liveAgent]
+      ? [...baseMessages, pendingUserMessage, ...liveMessages]
+      : [...baseMessages, ...liveMessages]
 
     const summary = turnSummaryByThreadId.value[threadId]
     if (!summary) return combined
@@ -864,14 +998,12 @@ export function useDesktopState() {
       await applyFallbackModelSelection()
       // Remove the failed user turn before replaying on fallback model to avoid duplicated user messages.
       try {
-        const rolledBackMessages = await rollbackThread(threadId, 1)
-        setPersistedMessagesForThread(threadId, rolledBackMessages)
-        setLiveAgentMessagesForThread(threadId, [])
+        const payload = await rollbackThreadRaw(threadId, 1)
+        const rolledBackMessages = normalizeThreadMessagesV2({ thread: payload.thread })
+        setConfirmedTranscriptForThread(threadId, rolledBackMessages, { inProgress: false })
+        clearLiveLedger(threadId)
         clearActiveLiveTextSegment(threadId)
-        setFinalizedTurnSnapshotForThread(threadId, null)
-        if (liveCommandsByThreadId.value[threadId]) {
-          liveCommandsByThreadId.value = omitKey(liveCommandsByThreadId.value, threadId)
-        }
+        setFinalizedTurnSnapshotForThread(threadId, null, { forceClear: true })
       } catch {
         // If rollback fails, continue with retry rather than dropping the turn.
       }
@@ -882,20 +1014,29 @@ export function useDesktopState() {
         label: 'Thinking',
         details: buildPendingTurnDetails(MODEL_FALLBACK_ID, pending.effort),
       })
-      setThreadInProgress(threadId, true)
+      updateLedgerThreadState(threadId, (current) => ({
+        ...current,
+        phase: 'live',
+        finalizedSnapshot: null,
+      }))
 
       if (resumedThreadById.value[threadId] !== true) {
         await resumeThread(threadId)
       }
 
-      await startThreadTurn(
+      await startThreadTurnRaw(
         threadId,
-        pending.text,
-        pending.imageUrls,
-        MODEL_FALLBACK_ID,
-        pending.effort || undefined,
-        pending.skills.length > 0 ? pending.skills : undefined,
-        pending.fileAttachments,
+        buildProtocolTurnInput(
+          pending.text,
+          pending.imageUrls,
+          pending.skills,
+          pending.fileAttachments,
+        ),
+        {
+          model: MODEL_FALLBACK_ID,
+          effort: pending.effort || undefined,
+          attachments: pending.fileAttachments,
+        },
       )
 
       resumedThreadById.value = {
@@ -910,7 +1051,11 @@ export function useDesktopState() {
       const errorMessage = unknownError instanceof Error ? unknownError.message : 'Unknown application error'
       setTurnErrorForThread(threadId, errorMessage)
       error.value = errorMessage
-      setThreadInProgress(threadId, false)
+      updateLedgerThreadState(threadId, (current) => ({
+        ...current,
+        phase: current.phase === 'failed' ? 'failed' : 'settled',
+        activeTurnId: '',
+      }))
       setTurnActivityForThread(threadId, null)
     } finally {
       fallbackRetryInFlightThreadIds.delete(threadId)
@@ -976,7 +1121,7 @@ export function useDesktopState() {
     const flaggedGroups: UiProjectGroup[] = withTitles.map((group) => ({
       projectName: group.projectName,
       threads: group.threads.map((thread) => {
-        const inProgress = inProgressById.value[thread.id] === true
+        const inProgress = isThreadInProgress(thread.id)
         const isSelected = selectedThreadId.value === thread.id
         const lastReadIso = readStateByThreadId.value[thread.id]
         const unreadByEvent = eventUnreadByThreadId.value[thread.id] === true
@@ -1047,18 +1192,11 @@ export function useDesktopState() {
     loadedMessagesByThreadId.value = pruneThreadStateMap(loadedMessagesByThreadId.value, activeThreadIds)
     loadedVersionByThreadId.value = pruneThreadStateMap(loadedVersionByThreadId.value, activeThreadIds)
     resumedThreadById.value = pruneThreadStateMap(resumedThreadById.value, activeThreadIds)
-    persistedMessagesByThreadId.value = pruneThreadStateMap(persistedMessagesByThreadId.value, activeThreadIds)
-    liveAgentMessagesByThreadId.value = pruneThreadStateMap(liveAgentMessagesByThreadId.value, activeThreadIds)
-    liveTextSegmentByThreadId.value = pruneThreadStateMap(liveTextSegmentByThreadId.value, activeThreadIds)
-    liveTextSegmentCountByThreadId.value = pruneThreadStateMap(liveTextSegmentCountByThreadId.value, activeThreadIds)
-    finalizedTurnSnapshotByThreadId.value = pruneThreadStateMap(finalizedTurnSnapshotByThreadId.value, activeThreadIds)
-    liveCommandsByThreadId.value = pruneThreadStateMap(liveCommandsByThreadId.value, activeThreadIds)
+    ledgerByThreadId.value = pruneThreadStateMap(ledgerByThreadId.value, activeThreadIds)
     turnSummaryByThreadId.value = pruneThreadStateMap(turnSummaryByThreadId.value, activeThreadIds)
     turnActivityByThreadId.value = pruneThreadStateMap(turnActivityByThreadId.value, activeThreadIds)
     turnErrorByThreadId.value = pruneThreadStateMap(turnErrorByThreadId.value, activeThreadIds)
-    activeTurnIdByThreadId.value = pruneThreadStateMap(activeTurnIdByThreadId.value, activeThreadIds)
     eventUnreadByThreadId.value = pruneThreadStateMap(eventUnreadByThreadId.value, activeThreadIds)
-    inProgressById.value = pruneThreadStateMap(inProgressById.value, activeThreadIds)
     const nextPending: Record<string, UiServerRequest[]> = {}
     for (const [threadId, requests] of Object.entries(pendingServerRequestsByThreadId.value)) {
       if (threadId === GLOBAL_SERVER_REQUEST_SCOPE || activeThreadIds.has(threadId)) {
@@ -1098,21 +1236,6 @@ export function useDesktopState() {
         turnSummaryByThreadId.value = omitKey(turnSummaryByThreadId.value, threadId)
       }
     }
-  }
-
-  function setThreadInProgress(threadId: string, nextInProgress: boolean): void {
-    if (!threadId) return
-    const currentValue = inProgressById.value[threadId] === true
-    if (currentValue === nextInProgress) return
-    if (nextInProgress) {
-      inProgressById.value = {
-        ...inProgressById.value,
-        [threadId]: true,
-      }
-    } else {
-      inProgressById.value = omitKey(inProgressById.value, threadId)
-    }
-    applyThreadFlags()
   }
 
   function markThreadUnreadByEvent(threadId: string): void {
@@ -1207,78 +1330,112 @@ export function useDesktopState() {
     saveThreadScrollStateMap(scrollStateByThreadId.value)
   }
 
-  function setPersistedMessagesForThread(threadId: string, nextMessages: UiMessage[]): void {
-    const previous = persistedMessagesByThreadId.value[threadId] ?? []
-    if (areMessageArraysEqual(previous, nextMessages)) return
-    persistedMessagesByThreadId.value = {
-      ...persistedMessagesByThreadId.value,
-      [threadId]: nextMessages,
+  function defaultLedgerThreadState(): LedgerThreadState {
+    return {
+      phase: 'idle',
+      confirmedTranscript: [],
+      liveEventLog: [],
+      finalizedSnapshot: null,
+      activeTurnId: '',
+      activeSegment: null,
+      nextSegmentCount: 0,
     }
   }
 
-  function setLiveAgentMessagesForThread(threadId: string, nextMessages: UiMessage[]): void {
-    const previous = liveAgentMessagesByThreadId.value[threadId] ?? []
-    if (areMessageArraysEqual(previous, nextMessages)) return
-    liveAgentMessagesByThreadId.value = {
-      ...liveAgentMessagesByThreadId.value,
-      [threadId]: nextMessages,
+  function getLedgerThreadState(threadId: string): LedgerThreadState {
+    return ledgerByThreadId.value[threadId] ?? defaultLedgerThreadState()
+  }
+
+  function isThreadInProgress(threadId: string): boolean {
+    const phase = getLedgerThreadState(threadId).phase
+    return phase === 'live' || phase === 'finalizing'
+  }
+
+  function updateLedgerThreadState(
+    threadId: string,
+    updater: (current: LedgerThreadState) => LedgerThreadState,
+  ): void {
+    if (!threadId) return
+    const previous = getLedgerThreadState(threadId)
+    const next = updater(previous)
+    if (next === previous) return
+    ledgerByThreadId.value = {
+      ...ledgerByThreadId.value,
+      [threadId]: next,
+    }
+    if (next.phase !== previous.phase) {
+      applyThreadFlags()
     }
   }
 
-  function upsertLiveAgentMessage(threadId: string, nextMessage: UiMessage): void {
-    const previous = liveAgentMessagesByThreadId.value[threadId] ?? []
-    const next = upsertMessage(previous, nextMessage)
-    setLiveAgentMessagesForThread(threadId, next)
+  function setConfirmedTranscriptForThread(
+    threadId: string,
+    nextMessages: UiMessage[],
+    options: { inProgress: boolean; preserveMissing?: boolean } = { inProgress: false },
+  ): void {
+    updateLedgerThreadState(threadId, (current) => {
+      const mergedMessages = options.inProgress
+        ? mergeMessages(current.confirmedTranscript, nextMessages, {
+            preserveMissing: options.preserveMissing === true,
+          })
+        : nextMessages
+      const phase: ChatPhase =
+        options.inProgress
+          ? (current.phase === 'finalizing' ? 'finalizing' : 'live')
+          : (current.phase === 'failed' ? 'failed' : 'settled')
+      return {
+        ...current,
+        confirmedTranscript: mergedMessages,
+        phase,
+        liveEventLog: options.inProgress ? current.liveEventLog : [],
+        finalizedSnapshot:
+          options.inProgress || shouldPreserveFinalizedSnapshot(current.finalizedSnapshot, mergedMessages)
+            ? current.finalizedSnapshot
+            : null,
+        activeTurnId: options.inProgress ? current.activeTurnId : '',
+        activeSegment: options.inProgress ? current.activeSegment : null,
+      }
+    })
   }
 
   function setFinalizedTurnSnapshotForThread(
     threadId: string,
     snapshot: FinalizedTurnSnapshotState | null,
+    options: { forceClear?: boolean } = {},
   ): void {
-    if (!threadId) return
-    const previous = finalizedTurnSnapshotByThreadId.value[threadId]
-    if (!snapshot) {
-      if (previous) {
-        finalizedTurnSnapshotByThreadId.value = omitKey(finalizedTurnSnapshotByThreadId.value, threadId)
-      }
-      return
-    }
-    if (previous?.turnId === snapshot.turnId && areMessageArraysEqual(previous.messages, snapshot.messages)) {
-      return
-    }
-    finalizedTurnSnapshotByThreadId.value = {
-      ...finalizedTurnSnapshotByThreadId.value,
-      [threadId]: snapshot,
-    }
+    updateLedgerThreadState(threadId, (current) => ({
+      ...current,
+      phase: snapshot
+        ? 'finalizing'
+        : current.phase === 'finalizing'
+          ? 'settled'
+          : current.phase,
+      finalizedSnapshot: snapshot
+        ? snapshot
+        : (!options.forceClear && shouldPreserveFinalizedSnapshot(current.finalizedSnapshot, current.confirmedTranscript))
+            ? current.finalizedSnapshot
+            : null,
+      activeTurnId: snapshot ? current.activeTurnId : '',
+    }))
   }
 
   function buildFinalizedTurnSnapshot(threadId: string, turnId: string): FinalizedTurnSnapshotState {
-    const persisted = persistedMessagesByThreadId.value[threadId] ?? []
-    const liveCommands = liveCommandsByThreadId.value[threadId] ?? []
-    const liveAgent = (liveAgentMessagesByThreadId.value[threadId] ?? [])
-      .filter((message) => message.messageType !== 'toolCall' && message.messageType !== 'reasoning.live')
+    const ledger = getLedgerThreadState(threadId)
+    const liveMessages = projectLiveTurnEvents(ledger.liveEventLog)
     return {
       turnId,
-      messages: [...persisted, ...liveCommands, ...liveAgent],
+      messages: [...ledger.confirmedTranscript, ...liveMessages],
     }
   }
 
   function clearActiveLiveTextSegment(threadId: string): void {
-    if (!liveTextSegmentByThreadId.value[threadId]) return
-    liveTextSegmentByThreadId.value = omitKey(liveTextSegmentByThreadId.value, threadId)
-  }
-
-  function nextLiveTextSegmentMessageId(
-    threadId: string,
-    kind: LiveTextSegmentState['kind'],
-    itemId: string,
-  ): string {
-    const nextCount = (liveTextSegmentCountByThreadId.value[threadId] ?? 0) + 1
-    liveTextSegmentCountByThreadId.value = {
-      ...liveTextSegmentCountByThreadId.value,
-      [threadId]: nextCount,
-    }
-    return `${kind}:${itemId}:segment:${nextCount}`
+    updateLedgerThreadState(threadId, (current) => {
+      if (!current.activeSegment) return current
+      return {
+        ...current,
+        activeSegment: null,
+      }
+    })
   }
 
   function appendLiveTextSegment(
@@ -1289,32 +1446,31 @@ export function useDesktopState() {
   ): void {
     if (!delta) return
 
-    const activeSegment = liveTextSegmentByThreadId.value[threadId]
-    if (activeSegment && activeSegment.kind === kind && activeSegment.itemId === itemId) {
-      const existing = (liveAgentMessagesByThreadId.value[threadId] ?? [])
-        .find((message) => message.id === activeSegment.messageId)
-      if (!existing) {
-        clearActiveLiveTextSegment(threadId)
-      } else {
-        upsertLiveAgentMessage(threadId, {
-          ...existing,
-          text: `${existing.text}${delta}`,
-        })
-        return
-      }
-    }
+    let segmentId = ''
+    updateLedgerThreadState(threadId, (current) => {
+      const activeSegment = current.activeSegment
+      segmentId =
+        activeSegment && activeSegment.kind === kind && activeSegment.itemId === itemId
+          ? activeSegment.segmentId
+          : `${kind}:${itemId}:segment:${current.nextSegmentCount + 1}`
 
-    const messageId = nextLiveTextSegmentMessageId(threadId, kind, itemId)
-    upsertLiveAgentMessage(threadId, {
-      id: messageId,
-      role: 'assistant',
-      text: delta,
-      messageType: kind === 'reasoning' ? 'reasoning.live' : 'agentMessage.live',
+      return {
+        ...current,
+        phase: current.phase === 'finalizing' ? 'finalizing' : 'live',
+        nextSegmentCount:
+          activeSegment && activeSegment.kind === kind && activeSegment.itemId === itemId
+            ? current.nextSegmentCount
+            : current.nextSegmentCount + 1,
+        activeSegment: { kind, itemId, segmentId },
+        liveEventLog: [...current.liveEventLog, {
+          type: 'text_delta',
+          kind,
+          itemId,
+          segmentId,
+          delta,
+        }],
+      }
     })
-    liveTextSegmentByThreadId.value = {
-      ...liveTextSegmentByThreadId.value,
-      [threadId]: { kind, itemId, messageId },
-    }
   }
 
   function hasLiveTextSegmentsForItem(
@@ -1322,9 +1478,9 @@ export function useDesktopState() {
     kind: LiveTextSegmentState['kind'],
     itemId: string,
   ): boolean {
-    const prefix = `${kind}:${itemId}:segment:`
-    return (liveAgentMessagesByThreadId.value[threadId] ?? [])
-      .some((message) => message.id.startsWith(prefix))
+    return getLedgerThreadState(threadId).liveEventLog.some((event) =>
+      event.type === 'text_delta' && event.kind === kind && event.itemId === itemId,
+    )
   }
 
   function asRecord(value: unknown): Record<string, unknown> | null {
@@ -1847,24 +2003,21 @@ export function useDesktopState() {
     }
   }
 
-  function upsertLiveCommand(threadId: string, msg: UiMessage): void {
-    const previous = liveCommandsByThreadId.value[threadId] ?? []
-    const next = upsertMessage(previous, msg)
-    if (next === previous) return
-    liveCommandsByThreadId.value = { ...liveCommandsByThreadId.value, [threadId]: next }
+  function clearLiveLedger(threadId: string): void {
+    updateLedgerThreadState(threadId, (current) => ({
+      ...current,
+      liveEventLog: [],
+      activeSegment: null,
+      activeTurnId: current.phase === 'finalizing' ? current.activeTurnId : current.activeTurnId,
+    }))
   }
 
-  function removeLiveCommandsPersistedIn(threadId: string, persistedMessages: UiMessage[]): void {
-    const current = liveCommandsByThreadId.value[threadId]
-    if (!current || current.length === 0) return
-    const persistedIds = new Set(persistedMessages.map((m) => m.id))
-    const next = current.filter((m) => !persistedIds.has(m.id))
-    if (next.length === current.length) return
-    if (next.length === 0) {
-      liveCommandsByThreadId.value = omitKey(liveCommandsByThreadId.value, threadId)
-    } else {
-      liveCommandsByThreadId.value = { ...liveCommandsByThreadId.value, [threadId]: next }
-    }
+  function appendLiveEvent(threadId: string, event: LiveTurnEvent): void {
+    updateLedgerThreadState(threadId, (current) => ({
+      ...current,
+      phase: current.phase === 'finalizing' ? 'finalizing' : 'live',
+      liveEventLog: [...current.liveEventLog, event],
+    }))
   }
 
   function isAgentContentEvent(notification: RpcNotification): boolean {
@@ -1907,14 +2060,17 @@ export function useDesktopState() {
     const startedTurn = readTurnStartedInfo(notification)
     if (startedTurn) {
       pendingTurnStartsById.set(startedTurn.turnId, startedTurn)
-      activeTurnIdByThreadId.value = {
-        ...activeTurnIdByThreadId.value,
-        [startedTurn.threadId]: startedTurn.turnId,
-      }
-      setFinalizedTurnSnapshotForThread(startedTurn.threadId, null)
+      updateLedgerThreadState(startedTurn.threadId, (current) => ({
+        ...current,
+        phase: 'live',
+        activeTurnId: startedTurn.turnId,
+        finalizedSnapshot: null,
+        liveEventLog: [],
+        activeSegment: null,
+      }))
+      setFinalizedTurnSnapshotForThread(startedTurn.threadId, null, { forceClear: true })
       setTurnSummaryForThread(startedTurn.threadId, null)
       setTurnErrorForThread(startedTurn.threadId, null)
-      setThreadInProgress(startedTurn.threadId, true)
       if (eventUnreadByThreadId.value[startedTurn.threadId]) {
         eventUnreadByThreadId.value = omitKey(eventUnreadByThreadId.value, startedTurn.threadId)
       }
@@ -1947,10 +2103,6 @@ export function useDesktopState() {
         turnId: completedTurn.turnId,
         durationMs,
       })
-      if (activeTurnIdByThreadId.value[completedTurn.threadId]) {
-        activeTurnIdByThreadId.value = omitKey(activeTurnIdByThreadId.value, completedTurn.threadId)
-      }
-      setThreadInProgress(completedTurn.threadId, false)
       setTurnActivityForThread(completedTurn.threadId, null)
       markThreadUnreadByEvent(completedTurn.threadId)
       if (!shouldRetryWithFallback) {
@@ -1962,6 +2114,10 @@ export function useDesktopState() {
     if (turnErrorMessage) {
       const failedThreadId = completedTurn?.threadId || extractThreadIdFromNotification(notification)
       if (failedThreadId) {
+        updateLedgerThreadState(failedThreadId, (current) => ({
+          ...current,
+          phase: 'failed',
+        }))
         setTurnErrorForThread(failedThreadId, turnErrorMessage)
       }
       error.value = turnErrorMessage
@@ -1969,6 +2125,10 @@ export function useDesktopState() {
         void retryPendingTurnWithFallback(failedThreadId)
       }
     } else if (completedTurn) {
+      updateLedgerThreadState(completedTurn.threadId, (current) => ({
+        ...current,
+        phase: current.finalizedSnapshot ? 'finalizing' : 'settled',
+      }))
       setTurnErrorForThread(completedTurn.threadId, null)
     }
 
@@ -2037,7 +2197,7 @@ export function useDesktopState() {
 
     const sectionBreakItemId = readReasoningSectionBreakItemId(notification)
     if (sectionBreakItemId) {
-      const activeSegment = liveTextSegmentByThreadId.value[notificationThreadId]
+      const activeSegment = getLedgerThreadState(notificationThreadId).activeSegment
       if (activeSegment?.kind === 'reasoning' && activeSegment.itemId === sectionBreakItemId) {
         appendLiveTextSegment(notificationThreadId, 'reasoning', sectionBreakItemId, '\n\n')
       }
@@ -2054,38 +2214,32 @@ export function useDesktopState() {
     const commandStarted = readCommandExecutionStarted(notification)
     if (commandStarted) {
       clearActiveLiveTextSegment(notificationThreadId)
-      upsertLiveCommand(notificationThreadId, commandStarted)
+      appendLiveEvent(notificationThreadId, { type: 'command_snapshot', message: commandStarted })
       setTurnActivityForThread(notificationThreadId, { label: 'Running command', details: [commandStarted.commandExecution?.command ?? ''] })
     }
 
     const toolStarted = readToolCallStarted(notification)
     if (toolStarted) {
       clearActiveLiveTextSegment(notificationThreadId)
-      upsertLiveAgentMessage(notificationThreadId, toolStarted)
+      appendLiveEvent(notificationThreadId, { type: 'tool_snapshot', message: toolStarted })
       setTurnActivityForThread(notificationThreadId, { label: 'Calling', details: [] })
     }
 
     const commandDelta = readCommandOutputDelta(notification)
     if (commandDelta) {
-      const current = (liveCommandsByThreadId.value[notificationThreadId] ?? []).find((m) => m.id === commandDelta.itemId)
-      if (current?.commandExecution) {
-        upsertLiveCommand(notificationThreadId, {
-          ...current,
-          commandExecution: { ...current.commandExecution, aggregatedOutput: `${current.commandExecution.aggregatedOutput}${commandDelta.delta}` },
-        })
-      }
+      appendLiveEvent(notificationThreadId, { type: 'command_output_delta', itemId: commandDelta.itemId, delta: commandDelta.delta })
     }
 
     const commandCompleted = readCommandExecutionCompleted(notification)
     if (commandCompleted) {
       clearActiveLiveTextSegment(notificationThreadId)
-      upsertLiveCommand(notificationThreadId, commandCompleted)
+      appendLiveEvent(notificationThreadId, { type: 'command_snapshot', message: commandCompleted })
     }
 
     const toolCompleted = readToolCallCompleted(notification)
     if (toolCompleted) {
       clearActiveLiveTextSegment(notificationThreadId)
-      upsertLiveAgentMessage(notificationThreadId, toolCompleted)
+      appendLiveEvent(notificationThreadId, { type: 'tool_snapshot', message: toolCompleted })
     }
 
     if (isAgentContentEvent(notification)) {
@@ -2105,21 +2259,20 @@ export function useDesktopState() {
       const completedTurnId =
         completedTurn?.turnId ||
         readString(asRecord(asRecord(notification.params)?.turn)?.id) ||
-        activeTurnIdByThreadId.value[notificationThreadId] ||
+        getLedgerThreadState(notificationThreadId).activeTurnId ||
         `${notificationThreadId}:unknown`
       setFinalizedTurnSnapshotForThread(
         notificationThreadId,
         buildFinalizedTurnSnapshot(notificationThreadId, completedTurnId),
       )
-      if ((liveAgentMessagesByThreadId.value[notificationThreadId] ?? []).length > 0) {
-        setLiveAgentMessagesForThread(notificationThreadId, [])
-      }
-      if (liveCommandsByThreadId.value[notificationThreadId]) {
-        liveCommandsByThreadId.value = omitKey(liveCommandsByThreadId.value, notificationThreadId)
-      }
+      clearLiveLedger(notificationThreadId)
+      updateLedgerThreadState(notificationThreadId, (current) => ({
+        ...current,
+        phase: 'finalizing',
+        activeTurnId: '',
+      }))
       const completedThreadId = extractThreadIdFromNotification(notification)
       if (completedThreadId) {
-        setThreadInProgress(completedThreadId, false)
         setTurnActivityForThread(completedThreadId, null)
         markThreadUnreadByEvent(completedThreadId)
         if (!shouldRetryWithFallback) {
@@ -2249,13 +2402,9 @@ export function useDesktopState() {
       const mergedWithInProgress = mergeIncomingWithLocalInProgressThreads(
         sourceGroups.value,
         orderedGroups,
-        inProgressById.value,
+        isThreadInProgress,
       )
       sourceGroups.value = mergeThreadGroups(sourceGroups.value, mergedWithInProgress)
-      inProgressById.value = pruneThreadStateMap(
-        inProgressById.value,
-        new Set(flattenThreads(sourceGroups.value).map((thread) => thread.id)),
-      )
       applyThreadFlags()
       hasLoadedThreads.value = true
 
@@ -2292,28 +2441,17 @@ export function useDesktopState() {
         }
       }
 
-      const { messages: nextMessages, inProgress } = await getThreadDetail(threadId)
-      const previousPersisted = persistedMessagesByThreadId.value[threadId] ?? []
-      const mergedMessages = inProgress
-        ? mergeMessages(previousPersisted, nextMessages, {
-            preserveMissing: options.silent === true,
-          })
-        : nextMessages
-      setPersistedMessagesForThread(threadId, mergedMessages)
+      const payload = await readThreadRaw(threadId)
+      const nextMessages = normalizeThreadMessagesV2(payload)
+      const inProgress = readThreadInProgressFromResponse(payload)
+      setConfirmedTranscriptForThread(threadId, nextMessages, {
+        inProgress,
+        preserveMissing: options.silent === true,
+      })
 
-      if (inProgress) {
+      if (!inProgress) {
+        clearLiveLedger(threadId)
         setFinalizedTurnSnapshotForThread(threadId, null)
-        const previousLiveAgent = liveAgentMessagesByThreadId.value[threadId] ?? []
-        const nextLiveAgent = removeRedundantLiveAgentMessages(previousLiveAgent, nextMessages)
-        setLiveAgentMessagesForThread(threadId, nextLiveAgent)
-        removeLiveCommandsPersistedIn(threadId, nextMessages)
-      } else {
-        setFinalizedTurnSnapshotForThread(threadId, null)
-        setLiveAgentMessagesForThread(threadId, [])
-        clearActiveLiveTextSegment(threadId)
-        if (liveCommandsByThreadId.value[threadId]) {
-          liveCommandsByThreadId.value = omitKey(liveCommandsByThreadId.value, threadId)
-        }
       }
 
       loadedMessagesByThreadId.value = {
@@ -2328,7 +2466,6 @@ export function useDesktopState() {
           [threadId]: version,
         }
       }
-      setThreadInProgress(threadId, inProgress)
       markThreadAsRead(threadId)
     } finally {
       if (shouldShowLoading) {
@@ -2413,7 +2550,7 @@ export function useDesktopState() {
     const nextText = text.trim()
     if (!threadId || (!nextText && imageUrls.length === 0 && fileAttachments.length === 0)) return
 
-    const isInProgress = inProgressById.value[threadId] === true
+    const isInProgress = isThreadInProgress(threadId)
 
     if (isInProgress && mode === 'queue') {
       const queue = queuedMessagesByThreadId.value[threadId] ?? []
@@ -2443,13 +2580,21 @@ export function useDesktopState() {
       { label: 'Thinking', details: buildPendingTurnDetails(selectedModelId.value, selectedReasoningEffort.value) },
     )
     setTurnErrorForThread(threadId, null)
-    setThreadInProgress(threadId, true)
+    updateLedgerThreadState(threadId, (current) => ({
+      ...current,
+      phase: 'live',
+      finalizedSnapshot: null,
+    }))
 
     try {
       await startTurnForThread(threadId, nextText, imageUrls, skills, fileAttachments)
     } catch (unknownError) {
       shouldAutoScrollOnNextAgentEvent = false
-      setThreadInProgress(threadId, false)
+      updateLedgerThreadState(threadId, (current) => ({
+        ...current,
+        phase: current.phase === 'failed' ? 'failed' : 'settled',
+        activeTurnId: '',
+      }))
       setTurnActivityForThread(threadId, null)
       const errorMessage = unknownError instanceof Error ? unknownError.message : 'Unknown application error'
       setTurnErrorForThread(threadId, errorMessage)
@@ -2500,14 +2645,22 @@ export function useDesktopState() {
         { label: 'Thinking', details: buildPendingTurnDetails(selectedModelId.value, selectedReasoningEffort.value) },
       )
       setTurnErrorForThread(threadId, null)
-      setThreadInProgress(threadId, true)
+      updateLedgerThreadState(threadId, (current) => ({
+        ...current,
+        phase: 'live',
+        finalizedSnapshot: null,
+      }))
       const capturedThreadId = threadId
       const capturedCwd = targetCwd || null
       const capturedPrompt = nextText
       void startTurnForThread(threadId, nextText, imageUrls, skills, fileAttachments)
         .catch((unknownError) => {
           shouldAutoScrollOnNextAgentEvent = false
-          setThreadInProgress(threadId, false)
+          updateLedgerThreadState(threadId, (current) => ({
+            ...current,
+            phase: current.phase === 'failed' ? 'failed' : 'settled',
+            activeTurnId: '',
+          }))
           setTurnActivityForThread(threadId, null)
           const errorMessage = unknownError instanceof Error ? unknownError.message : 'Unknown application error'
           setTurnErrorForThread(threadId, errorMessage)
@@ -2521,7 +2674,11 @@ export function useDesktopState() {
     } catch (unknownError) {
       shouldAutoScrollOnNextAgentEvent = false
       if (threadId) {
-        setThreadInProgress(threadId, false)
+        updateLedgerThreadState(threadId, (current) => ({
+          ...current,
+          phase: current.phase === 'failed' ? 'failed' : 'settled',
+          activeTurnId: '',
+        }))
         setTurnActivityForThread(threadId, null)
       }
       const errorMessage = unknownError instanceof Error ? unknownError.message : 'Unknown application error'
@@ -2562,14 +2719,19 @@ export function useDesktopState() {
       }
 
       try {
-        await startThreadTurn(
+        await startThreadTurnRaw(
           threadId,
-          nextText,
-          imageUrls,
-          modelId || undefined,
-          reasoningEffort || undefined,
-          skills.length > 0 ? skills : undefined,
-          fileAttachments,
+          buildProtocolTurnInput(
+            nextText,
+            imageUrls,
+            skills,
+            fileAttachments,
+          ),
+          {
+            model: modelId || undefined,
+            effort: reasoningEffort || undefined,
+            attachments: fileAttachments,
+          },
         )
       } catch (unknownError) {
         if (modelId && modelId !== MODEL_FALLBACK_ID && isUnsupportedChatGptModelError(unknownError)) {
@@ -2582,14 +2744,19 @@ export function useDesktopState() {
             effort: reasoningEffort,
             fallbackRetried: true,
           })
-          await startThreadTurn(
+          await startThreadTurnRaw(
             threadId,
-            nextText,
-            imageUrls,
-            MODEL_FALLBACK_ID,
-            reasoningEffort || undefined,
-            skills.length > 0 ? skills : undefined,
-            fileAttachments,
+            buildProtocolTurnInput(
+              nextText,
+              imageUrls,
+              skills,
+              fileAttachments,
+            ),
+            {
+              model: MODEL_FALLBACK_ID,
+              effort: reasoningEffort || undefined,
+              attachments: fileAttachments,
+            },
           )
         } else {
           throw unknownError
@@ -2622,11 +2789,19 @@ export function useDesktopState() {
     setTurnSummaryForThread(threadId, null)
     setTurnActivityForThread(threadId, { label: 'Thinking', details: buildPendingTurnDetails(selectedModelId.value, selectedReasoningEffort.value) })
     setTurnErrorForThread(threadId, null)
-    setThreadInProgress(threadId, true)
+    updateLedgerThreadState(threadId, (current) => ({
+      ...current,
+      phase: 'live',
+      finalizedSnapshot: null,
+    }))
     try {
       await startTurnForThread(threadId, next.text, next.imageUrls, next.skills, next.fileAttachments)
     } catch {
-      setThreadInProgress(threadId, false)
+      updateLedgerThreadState(threadId, (current) => ({
+        ...current,
+        phase: current.phase === 'failed' ? 'failed' : 'settled',
+        activeTurnId: '',
+      }))
       setTurnActivityForThread(threadId, null)
     } finally {
       isSendingMessage.value = false
@@ -2636,19 +2811,23 @@ export function useDesktopState() {
   async function interruptSelectedThreadTurn(): Promise<void> {
     const threadId = selectedThreadId.value
     if (!threadId) return
-    if (inProgressById.value[threadId] !== true) return
-    const turnId = activeTurnIdByThreadId.value[threadId]
+    if (!isThreadInProgress(threadId)) return
+    const turnId = getLedgerThreadState(threadId).activeTurnId
 
     isInterruptingTurn.value = true
     error.value = ''
     try {
-      await interruptThreadTurn(threadId, turnId)
-      setThreadInProgress(threadId, false)
+      if (!turnId) {
+        throw new Error('turn/interrupt requires turnId')
+      }
+      await interruptThreadTurnRaw(threadId, turnId)
+      updateLedgerThreadState(threadId, (current) => ({
+        ...current,
+        phase: current.phase === 'failed' ? 'failed' : 'settled',
+        activeTurnId: '',
+      }))
       setTurnActivityForThread(threadId, null)
       setTurnErrorForThread(threadId, null)
-      if (activeTurnIdByThreadId.value[threadId]) {
-        activeTurnIdByThreadId.value = omitKey(activeTurnIdByThreadId.value, threadId)
-      }
       pendingThreadMessageRefresh.add(threadId)
       pendingThreadsRefresh = true
       await syncFromNotifications()
@@ -2666,7 +2845,7 @@ export function useDesktopState() {
     if (!threadId) return
     if (isRollingBack.value) return
 
-    const persisted = persistedMessagesByThreadId.value[threadId] ?? []
+    const persisted = getLedgerThreadState(threadId).confirmedTranscript
     const maxTurnIndex = persisted.reduce((max, m) => (typeof m.turnIndex === 'number' && m.turnIndex > max ? m.turnIndex : max), -1)
     if (maxTurnIndex < 0 || turnIndex > maxTurnIndex) return
     const numTurns = maxTurnIndex - turnIndex + 1
@@ -2675,14 +2854,12 @@ export function useDesktopState() {
     isRollingBack.value = true
     error.value = ''
     try {
-      const nextMessages = await rollbackThread(threadId, numTurns)
-      setPersistedMessagesForThread(threadId, nextMessages)
-      setLiveAgentMessagesForThread(threadId, [])
+      const payload = await rollbackThreadRaw(threadId, numTurns)
+      const nextMessages = normalizeThreadMessagesV2({ thread: payload.thread })
+      setConfirmedTranscriptForThread(threadId, nextMessages, { inProgress: false })
+      clearLiveLedger(threadId)
       clearActiveLiveTextSegment(threadId)
-      setFinalizedTurnSnapshotForThread(threadId, null)
-      if (liveCommandsByThreadId.value[threadId]) {
-        liveCommandsByThreadId.value = omitKey(liveCommandsByThreadId.value, threadId)
-      }
+      setFinalizedTurnSnapshotForThread(threadId, null, { forceClear: true })
       setTurnSummaryForThread(threadId, null)
       setTurnActivityForThread(threadId, null)
       setTurnErrorForThread(threadId, null)
@@ -2833,7 +3010,7 @@ export function useDesktopState() {
       const currentVersion = currentThreadVersion(threadId)
       const loadedVersion = loadedVersionByThreadId.value[threadId] ?? ''
       const hasVersionChange = currentVersion.length > 0 && currentVersion !== loadedVersion
-      const isInProgress = inProgressById.value[threadId] === true
+      const isInProgress = isThreadInProgress(threadId)
 
       if (isInProgress || hasVersionChange) {
         await loadMessages(threadId, { silent: true })
@@ -2872,7 +3049,7 @@ export function useDesktopState() {
       if (!activeThreadId) return
 
       const isActiveDirty = threadIdsToRefresh.has(activeThreadId)
-      const isInProgress = inProgressById.value[activeThreadId] === true
+      const isInProgress = isThreadInProgress(activeThreadId)
       const currentVersion = currentThreadVersion(activeThreadId)
       const loadedVersion = loadedVersionByThreadId.value[activeThreadId] ?? ''
       const hasVersionChange = currentVersion.length > 0 && currentVersion !== loadedVersion
@@ -2999,16 +3176,10 @@ export function useDesktopState() {
     }
     activeReasoningItemId = ''
     shouldAutoScrollOnNextAgentEvent = false
-    persistedMessagesByThreadId.value = {}
-    liveAgentMessagesByThreadId.value = {}
-    liveTextSegmentByThreadId.value = {}
-    liveTextSegmentCountByThreadId.value = {}
-    finalizedTurnSnapshotByThreadId.value = {}
-    liveCommandsByThreadId.value = {}
+    ledgerByThreadId.value = {}
     turnActivityByThreadId.value = {}
     turnSummaryByThreadId.value = {}
     turnErrorByThreadId.value = {}
-    activeTurnIdByThreadId.value = {}
     queuedMessagesByThreadId.value = {}
   }
 
