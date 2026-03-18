@@ -77,7 +77,9 @@ import {
   saveThreadScrollStateMap as saveThreadScrollStateMapHelper,
 } from './storage'
 import { createDesktopLedger } from './ledger'
+import { createProjectState } from './project-state'
 import { createThreadListState } from './thread-list-state'
+import { createThreadPreferences } from './thread-preferences'
 import { createThreadRuntimeState } from './thread-runtime-state'
 import { createThreadSync } from './thread-sync'
 import { createThreadTurnActions } from './thread-turn-actions'
@@ -490,18 +492,6 @@ export function useDesktopState() {
     selectedModelId.value = modelId.trim()
   }
 
-  async function applyFallbackModelSelection(): Promise<void> {
-    selectedModelId.value = MODEL_FALLBACK_ID
-    if (!availableModelIds.value.includes(MODEL_FALLBACK_ID)) {
-      availableModelIds.value = [...availableModelIds.value, MODEL_FALLBACK_ID]
-    }
-    try {
-      await setDefaultModel(MODEL_FALLBACK_ID)
-    } catch {
-      // Keep local selection even when persisting default model fails.
-    }
-  }
-
   function setPendingTurnRequest(threadId: string, request: PendingTurnRequest): void {
     pendingTurnRequestByThreadId.value = {
       ...pendingTurnRequestByThreadId.value,
@@ -600,42 +590,30 @@ export function useDesktopState() {
     selectedReasoningEffort.value = effort
   }
 
-  function buildPendingTurnDetails(_modelId: string, _effort: ReasoningEffort | ''): string[] {
-    return []
-  }
-
-  async function refreshModelPreferences(): Promise<void> {
-    try {
-      const [modelIds, currentConfig] = await Promise.all([
-        getAvailableModelIds(),
-        getCurrentModelConfig(),
-      ])
-
-      availableModelIds.value = modelIds
-
-      const hasSelectedModel = selectedModelId.value.length > 0 && modelIds.includes(selectedModelId.value)
-      if (!hasSelectedModel) {
-        if (currentConfig.model && modelIds.includes(currentConfig.model)) {
-          selectedModelId.value = currentConfig.model
-        } else if (modelIds.length > 0) {
-          selectedModelId.value = modelIds[0]
-        } else {
-          selectedModelId.value = ''
-        }
-      }
-
-      if (
-        currentConfig.reasoningEffort &&
-        REASONING_EFFORT_OPTIONS.includes(currentConfig.reasoningEffort)
-      ) {
-        selectedReasoningEffort.value = currentConfig.reasoningEffort
-      }
-    } catch {
-      // Keep chat UI usable even if model metadata is temporarily unavailable.
-    }
-  }
+  const {
+    applyFallbackModelSelection,
+    buildPendingTurnDetails,
+    refreshModelPreferences,
+    loadThreadTitleCacheIfNeeded,
+    requestThreadTitleGeneration,
+  } = createThreadPreferences({
+    selectedModelId,
+    selectedReasoningEffort,
+    availableModelIds,
+    threadTitleById,
+    modelFallbackId: MODEL_FALLBACK_ID,
+    reasoningEffortOptions: REASONING_EFFORT_OPTIONS,
+    applyThreadFlags: () => applyThreadFlags(),
+    getThreadTitleCache,
+  })
 
   let applyThreadFlags = (): void => {}
+  let hydrateWorkspaceRootsStateIfNeeded = async (_groups: UiProjectGroup[]): Promise<void> => {}
+  let persistProjectOrderToWorkspaceRoots = async (): Promise<void> => {}
+  let renameProject = (_projectName: string, _displayName: string): void => {}
+  let removeProject = (_projectName: string): void => {}
+  let reorderProject = (_projectName: string, _toIndex: number): void => {}
+  let pinProjectToTop = (_projectName: string): void => {}
 
   const {
     markThreadAsRead,
@@ -681,7 +659,6 @@ export function useDesktopState() {
     ledgerByThreadId,
     onPhaseChange: () => applyThreadFlags(),
   })
-
   const threadListState = createThreadListState({
     sourceGroups,
     projectGroups,
@@ -707,12 +684,31 @@ export function useDesktopState() {
     saveProjectOrder,
     saveReadStateMap,
     saveThreadScrollStateMap,
-    hydrateWorkspaceRootsStateIfNeeded,
+    hydrateWorkspaceRootsStateIfNeeded: (groups) => hydrateWorkspaceRootsStateIfNeeded(groups),
     getThreadGroups,
     loadThreadTitleCacheIfNeeded,
   })
   applyThreadFlags = threadListState.applyThreadFlags
   const { insertOptimisticThread, loadThreads, pruneThreadScopedState } = threadListState
+  ;({
+    hydrateWorkspaceRootsStateIfNeeded,
+    renameProject,
+    removeProject,
+    reorderProject,
+    pinProjectToTop,
+    persistProjectOrderToWorkspaceRoots,
+  } = createProjectState({
+    sourceGroups,
+    projectGroups,
+    projectOrder,
+    projectDisplayNameById,
+    selectedThreadId,
+    saveProjectOrder,
+    saveProjectDisplayNames,
+    applyThreadFlags: () => applyThreadFlags(),
+    pruneThreadScopedState,
+    setSelectedThreadId,
+  }))
   const eventSyncTimerRef = {
     get value() {
       return eventSyncTimer
@@ -1098,75 +1094,6 @@ export function useDesktopState() {
     }, EVENT_SYNC_DEBOUNCE_MS)
   }
 
-  async function hydrateWorkspaceRootsStateIfNeeded(groups: UiProjectGroup[]): Promise<void> {
-    if (IS_WASM_RUNTIME) return
-    if (hasHydratedWorkspaceRootsState) return
-    hasHydratedWorkspaceRootsState = true
-
-    try {
-      const rootsState = await getWorkspaceRootsState()
-      const hydratedOrder: string[] = []
-      for (const rootPath of rootsState.order) {
-        const projectName = toProjectNameFromWorkspaceRoot(rootPath)
-        if (hydratedOrder.includes(projectName)) continue
-        hydratedOrder.push(projectName)
-      }
-
-      if (hydratedOrder.length > 0) {
-        const mergedOrder = mergeProjectOrder(hydratedOrder, groups)
-        if (!areStringArraysEqual(projectOrder.value, mergedOrder)) {
-          projectOrder.value = mergedOrder
-          saveProjectOrder(projectOrder.value)
-        }
-      }
-
-      if (Object.keys(rootsState.labels).length > 0) {
-        const nextLabels = { ...projectDisplayNameById.value }
-        let changed = false
-        for (const [rootPath, label] of Object.entries(rootsState.labels)) {
-          const projectName = toProjectNameFromWorkspaceRoot(rootPath)
-          if (nextLabels[projectName] === label) continue
-          nextLabels[projectName] = label
-          changed = true
-        }
-        if (changed) {
-          projectDisplayNameById.value = nextLabels
-          saveProjectDisplayNames(nextLabels)
-        }
-      }
-    } catch {
-      // Keep local storage fallback when global state is unavailable.
-    }
-  }
-
-  async function loadThreadTitleCacheIfNeeded(): Promise<void> {
-    if (Object.keys(threadTitleById.value).length > 0) return
-    try {
-      const cache = await getThreadTitleCache()
-      if (Object.keys(cache.titles).length > 0) {
-        threadTitleById.value = cache.titles
-      }
-    } catch {
-      // Title cache is optional; keep UI functional.
-    }
-  }
-
-  async function requestThreadTitleGeneration(threadId: string, prompt: string, cwd: string | null): Promise<void> {
-    if (threadTitleById.value[threadId]) return
-    const trimmed = prompt.trim()
-    if (!trimmed) return
-    const truncated = trimmed.length > 300 ? trimmed.slice(0, 300) : trimmed
-    try {
-      const title = await generateThreadTitle(truncated, cwd)
-      if (!title || threadTitleById.value[threadId]) return
-      threadTitleById.value = { ...threadTitleById.value, [threadId]: title }
-      applyThreadFlags()
-      void persistThreadTitle(threadId, title)
-    } catch {
-      // Title generation is best-effort.
-    }
-  }
-
   async function archiveThreadById(threadId: string) {
     try {
       await archiveThread(threadId)
@@ -1191,131 +1118,6 @@ export function useDesktopState() {
       void persistThreadTitle(threadId, normalizedName)
     } catch (unknownError) {
       error.value = unknownError instanceof Error ? unknownError.message : 'Unknown application error'
-    }
-  }
-
-  function renameProject(projectName: string, displayName: string): void {
-    if (projectName.length === 0) return
-
-    const currentValue = projectDisplayNameById.value[projectName] ?? ''
-    if (currentValue === displayName) return
-
-    projectDisplayNameById.value = {
-      ...projectDisplayNameById.value,
-      [projectName]: displayName,
-    }
-    saveProjectDisplayNames(projectDisplayNameById.value)
-  }
-
-  function removeProject(projectName: string): void {
-    if (projectName.length === 0) return
-
-    const nextProjectOrder = projectOrder.value.filter((name) => name !== projectName)
-    if (!areStringArraysEqual(projectOrder.value, nextProjectOrder)) {
-      projectOrder.value = nextProjectOrder
-      saveProjectOrder(projectOrder.value)
-    }
-
-    sourceGroups.value = sourceGroups.value.filter((group) => group.projectName !== projectName)
-
-    if (projectDisplayNameById.value[projectName] !== undefined) {
-      const nextDisplayNames = { ...projectDisplayNameById.value }
-      delete nextDisplayNames[projectName]
-      projectDisplayNameById.value = nextDisplayNames
-      saveProjectDisplayNames(nextDisplayNames)
-    }
-
-    applyThreadFlags()
-
-    const flatThreads = flattenThreads(projectGroups.value)
-    pruneThreadScopedState(flatThreads)
-
-    const currentExists = flatThreads.some((thread) => thread.id === selectedThreadId.value)
-    if (!currentExists) {
-      setSelectedThreadId(flatThreads[0]?.id ?? '')
-    }
-
-    void persistProjectOrderToWorkspaceRoots()
-  }
-
-  function reorderProject(projectName: string, toIndex: number): void {
-    if (projectName.length === 0) return
-    if (sourceGroups.value.length === 0) return
-
-    const visibleOrder = sourceGroups.value.map((group) => group.projectName)
-    const fromIndex = visibleOrder.indexOf(projectName)
-    if (fromIndex === -1) return
-
-    const clampedToIndex = Math.max(0, Math.min(toIndex, visibleOrder.length - 1))
-    const reorderedVisibleOrder = reorderStringArray(visibleOrder, fromIndex, clampedToIndex)
-    if (reorderedVisibleOrder === visibleOrder) return
-
-    const normalizedProjectOrder = mergeProjectOrder(reorderedVisibleOrder, sourceGroups.value)
-    projectOrder.value = normalizedProjectOrder
-    saveProjectOrder(projectOrder.value)
-
-    const orderedGroups = orderGroupsByProjectOrder(sourceGroups.value, projectOrder.value)
-    sourceGroups.value = mergeThreadGroups(sourceGroups.value, orderedGroups)
-    applyThreadFlags()
-    void persistProjectOrderToWorkspaceRoots()
-  }
-
-  function pinProjectToTop(projectName: string): void {
-    const normalizedName = projectName.trim()
-    if (!normalizedName) return
-    const nextOrder = [normalizedName, ...projectOrder.value.filter((name) => name !== normalizedName)]
-    if (areStringArraysEqual(projectOrder.value, nextOrder)) return
-    projectOrder.value = nextOrder
-    saveProjectOrder(projectOrder.value)
-
-    const orderedGroups = orderGroupsByProjectOrder(sourceGroups.value, projectOrder.value)
-    sourceGroups.value = mergeThreadGroups(sourceGroups.value, orderedGroups)
-    applyThreadFlags()
-    void persistProjectOrderToWorkspaceRoots()
-  }
-
-  async function persistProjectOrderToWorkspaceRoots(): Promise<void> {
-    if (IS_WASM_RUNTIME) return
-    try {
-      const rootsState = await getWorkspaceRootsState()
-      const rootByProjectName = new Map<string, string>()
-      for (const rootPath of rootsState.order) {
-        const projectName = toProjectNameFromWorkspaceRoot(rootPath)
-        if (!rootByProjectName.has(projectName)) {
-          rootByProjectName.set(projectName, rootPath)
-        }
-      }
-      for (const group of sourceGroups.value) {
-        const cwd = group.threads[0]?.cwd?.trim() ?? ''
-        if (!cwd) continue
-        rootByProjectName.set(group.projectName, cwd)
-      }
-
-      const nextOrder: string[] = []
-      for (const projectName of projectOrder.value) {
-        const rootPath = rootByProjectName.get(projectName)
-        if (rootPath && !nextOrder.includes(rootPath)) {
-          nextOrder.push(rootPath)
-        }
-      }
-      for (const rootPath of rootsState.order) {
-        if (!nextOrder.includes(rootPath)) {
-          nextOrder.push(rootPath)
-        }
-      }
-
-      const nextActive = rootsState.active.filter((rootPath) => nextOrder.includes(rootPath))
-      if (nextActive.length === 0 && nextOrder.length > 0) {
-        nextActive.push(nextOrder[0])
-      }
-
-      await setWorkspaceRootsState({
-        order: nextOrder,
-        labels: rootsState.labels,
-        active: nextActive,
-      })
-    } catch {
-      // Keep local project order when global state persistence is unavailable.
     }
   }
 
