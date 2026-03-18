@@ -80,6 +80,7 @@ import { createDesktopLedger } from './ledger'
 import { createThreadListState } from './thread-list-state'
 import { createThreadRuntimeState } from './thread-runtime-state'
 import { createThreadSync } from './thread-sync'
+import { createThreadTurnActions } from './thread-turn-actions'
 import {
   extractThreadIdFromNotification,
   isAgentContentEvent,
@@ -771,6 +772,57 @@ export function useDesktopState() {
     refreshModelPreferences,
     setSelectedThreadId,
   })
+  const shouldAutoScrollRef = {
+    get value() {
+      return shouldAutoScrollOnNextAgentEvent
+    },
+    set value(nextValue: boolean) {
+      shouldAutoScrollOnNextAgentEvent = nextValue
+    },
+  }
+  const {
+    sendMessageToSelectedThread,
+    sendMessageToNewThread,
+    startTurnForThread,
+    processQueuedMessages,
+    interruptSelectedThreadTurn,
+    rollbackSelectedThread,
+  } = createThreadTurnActions({
+    selectedThreadId,
+    selectedModelId,
+    selectedReasoningEffort,
+    resumedThreadById,
+    queuedMessagesByThreadId,
+    isSendingMessage,
+    isInterruptingTurn,
+    isRollingBack,
+    error,
+    shouldAutoScrollRef,
+    pendingThreadsRefreshRef,
+    pendingThreadMessageRefreshRef,
+    modelFallbackId: MODEL_FALLBACK_ID,
+    isThreadInProgress,
+    getLedgerThreadState,
+    updateLedgerThreadState,
+    clearLiveLedger,
+    clearActiveLiveTextSegment,
+    setConfirmedTranscriptForThread,
+    setFinalizedTurnSnapshotForThread,
+    setTurnSummaryForThread,
+    setTurnActivityForThread,
+    setTurnErrorForThread,
+    setSelectedThreadId,
+    insertOptimisticThread,
+    loadMessages,
+    loadThreads,
+    syncFromNotifications,
+    buildPendingTurnDetails,
+    buildProtocolTurnInput,
+    setPendingTurnRequest,
+    isUnsupportedChatGptModelError,
+    applyFallbackModelSelection,
+    requestThreadTitleGeneration,
+  })
 
   function applyRealtimeUpdates(notification: RpcNotification): void {
     if (handleServerRequestNotification(notification)) {
@@ -1139,339 +1191,6 @@ export function useDesktopState() {
       void persistThreadTitle(threadId, normalizedName)
     } catch (unknownError) {
       error.value = unknownError instanceof Error ? unknownError.message : 'Unknown application error'
-    }
-  }
-
-  async function sendMessageToSelectedThread(
-    text: string,
-    imageUrls: string[] = [],
-    skills: Array<{ name: string; path: string }> = [],
-    mode: 'steer' | 'queue' = 'steer',
-    fileAttachments: FileAttachment[] = [],
-  ): Promise<void> {
-    const threadId = selectedThreadId.value
-    const nextText = text.trim()
-    if (!threadId || (!nextText && imageUrls.length === 0 && fileAttachments.length === 0)) return
-
-    const isInProgress = isThreadInProgress(threadId)
-
-    if (isInProgress && mode === 'queue') {
-      const queue = queuedMessagesByThreadId.value[threadId] ?? []
-      const id = `q-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
-      queuedMessagesByThreadId.value = {
-        ...queuedMessagesByThreadId.value,
-        [threadId]: [...queue, { id, text: nextText, imageUrls, skills, fileAttachments }],
-      }
-      return
-    }
-
-    if (isInProgress) {
-      shouldAutoScrollOnNextAgentEvent = true
-      void startTurnForThread(threadId, nextText, imageUrls, skills, fileAttachments).catch((unknownError) => {
-        const errorMessage = unknownError instanceof Error ? unknownError.message : 'Unknown application error'
-        setTurnErrorForThread(threadId, errorMessage)
-        error.value = errorMessage
-      })
-      return
-    }
-
-    error.value = ''
-    shouldAutoScrollOnNextAgentEvent = true
-    setTurnSummaryForThread(threadId, null)
-    setTurnActivityForThread(
-      threadId,
-      { label: 'Thinking', details: buildPendingTurnDetails(selectedModelId.value, selectedReasoningEffort.value) },
-    )
-    setTurnErrorForThread(threadId, null)
-    updateLedgerThreadState(threadId, (current) => ({
-      ...current,
-      phase: 'live',
-      finalizedSnapshot: null,
-    }))
-
-    try {
-      await startTurnForThread(threadId, nextText, imageUrls, skills, fileAttachments)
-    } catch (unknownError) {
-      shouldAutoScrollOnNextAgentEvent = false
-      updateLedgerThreadState(threadId, (current) => ({
-        ...current,
-        phase: current.phase === 'failed' ? 'failed' : 'settled',
-        activeTurnId: '',
-      }))
-      setTurnActivityForThread(threadId, null)
-      const errorMessage = unknownError instanceof Error ? unknownError.message : 'Unknown application error'
-      setTurnErrorForThread(threadId, errorMessage)
-      error.value = errorMessage
-      throw unknownError
-    }
-  }
-
-  async function sendMessageToNewThread(
-    text: string,
-    cwd: string,
-    imageUrls: string[] = [],
-    skills: Array<{ name: string; path: string }> = [],
-    fileAttachments: FileAttachment[] = [],
-  ): Promise<string> {
-    const nextText = text.trim()
-    const targetCwd = cwd.trim()
-    const selectedModel = selectedModelId.value.trim()
-    if (!nextText && imageUrls.length === 0 && fileAttachments.length === 0) return ''
-
-    isSendingMessage.value = true
-    error.value = ''
-    let threadId = ''
-
-    try {
-      try {
-        threadId = await startThread(targetCwd || undefined, selectedModel || undefined)
-      } catch (unknownError) {
-        if (selectedModel && selectedModel !== MODEL_FALLBACK_ID && isUnsupportedChatGptModelError(unknownError)) {
-          await applyFallbackModelSelection()
-          threadId = await startThread(targetCwd || undefined, MODEL_FALLBACK_ID)
-        } else {
-          throw unknownError
-        }
-      }
-      if (!threadId) return ''
-
-      insertOptimisticThread(threadId, targetCwd, nextText || '[Image]')
-      resumedThreadById.value = {
-        ...resumedThreadById.value,
-        [threadId]: true,
-      }
-      setSelectedThreadId(threadId)
-      shouldAutoScrollOnNextAgentEvent = true
-      setTurnSummaryForThread(threadId, null)
-      setTurnActivityForThread(
-        threadId,
-        { label: 'Thinking', details: buildPendingTurnDetails(selectedModelId.value, selectedReasoningEffort.value) },
-      )
-      setTurnErrorForThread(threadId, null)
-      updateLedgerThreadState(threadId, (current) => ({
-        ...current,
-        phase: 'live',
-        finalizedSnapshot: null,
-      }))
-      const capturedThreadId = threadId
-      const capturedCwd = targetCwd || null
-      const capturedPrompt = nextText
-      void startTurnForThread(threadId, nextText, imageUrls, skills, fileAttachments)
-        .catch((unknownError) => {
-          shouldAutoScrollOnNextAgentEvent = false
-          updateLedgerThreadState(threadId, (current) => ({
-            ...current,
-            phase: current.phase === 'failed' ? 'failed' : 'settled',
-            activeTurnId: '',
-          }))
-          setTurnActivityForThread(threadId, null)
-          const errorMessage = unknownError instanceof Error ? unknownError.message : 'Unknown application error'
-          setTurnErrorForThread(threadId, errorMessage)
-          error.value = errorMessage
-        })
-        .finally(() => {
-          isSendingMessage.value = false
-        })
-      void requestThreadTitleGeneration(capturedThreadId, capturedPrompt, capturedCwd)
-      return threadId
-    } catch (unknownError) {
-      shouldAutoScrollOnNextAgentEvent = false
-      if (threadId) {
-        updateLedgerThreadState(threadId, (current) => ({
-          ...current,
-          phase: current.phase === 'failed' ? 'failed' : 'settled',
-          activeTurnId: '',
-        }))
-        setTurnActivityForThread(threadId, null)
-      }
-      const errorMessage = unknownError instanceof Error ? unknownError.message : 'Unknown application error'
-      if (threadId) {
-        setTurnErrorForThread(threadId, errorMessage)
-      }
-      error.value = errorMessage
-      isSendingMessage.value = false
-      throw unknownError
-    }
-  }
-
-  async function startTurnForThread(
-    threadId: string,
-    nextText: string,
-    imageUrls: string[] = [],
-    skills: Array<{ name: string; path: string }> = [],
-    fileAttachments: FileAttachment[] = [],
-  ): Promise<void> {
-    const modelId = selectedModelId.value.trim()
-    const reasoningEffort = selectedReasoningEffort.value
-    const normalizedText = nextText.trim()
-    const normalizedSkills = skills.map((skill) => ({ name: skill.name, path: skill.path }))
-    const normalizedFileAttachments = fileAttachments.map((file) => ({ ...file }))
-
-    setPendingTurnRequest(threadId, {
-      text: normalizedText,
-      imageUrls: [...imageUrls],
-      skills: normalizedSkills,
-      fileAttachments: normalizedFileAttachments,
-      effort: reasoningEffort,
-      fallbackRetried: false,
-    })
-
-    try {
-      if (resumedThreadById.value[threadId] !== true) {
-        await resumeThread(threadId)
-      }
-
-      try {
-        await startThreadTurnRaw(
-          threadId,
-          buildProtocolTurnInput(
-            nextText,
-            imageUrls,
-            skills,
-            fileAttachments,
-          ),
-          {
-            model: modelId || undefined,
-            effort: reasoningEffort || undefined,
-            attachments: fileAttachments,
-          },
-        )
-      } catch (unknownError) {
-        if (modelId && modelId !== MODEL_FALLBACK_ID && isUnsupportedChatGptModelError(unknownError)) {
-          await applyFallbackModelSelection()
-          setPendingTurnRequest(threadId, {
-            text: normalizedText,
-            imageUrls: [...imageUrls],
-            skills: normalizedSkills,
-            fileAttachments: normalizedFileAttachments,
-            effort: reasoningEffort,
-            fallbackRetried: true,
-          })
-          await startThreadTurnRaw(
-            threadId,
-            buildProtocolTurnInput(
-              nextText,
-              imageUrls,
-              skills,
-              fileAttachments,
-            ),
-            {
-              model: MODEL_FALLBACK_ID,
-              effort: reasoningEffort || undefined,
-              attachments: fileAttachments,
-            },
-          )
-        } else {
-          throw unknownError
-        }
-      }
-
-      resumedThreadById.value = {
-        ...resumedThreadById.value,
-        [threadId]: true,
-      }
-
-      pendingThreadMessageRefresh.add(threadId)
-      pendingThreadsRefresh = true
-      await syncFromNotifications()
-    } catch (unknownError) {
-      throw unknownError
-    }
-  }
-
-  async function processQueuedMessages(threadId: string): Promise<void> {
-    const queue = queuedMessagesByThreadId.value[threadId]
-    if (!queue || queue.length === 0) return
-    const [next, ...rest] = queue
-    queuedMessagesByThreadId.value = rest.length > 0
-      ? { ...queuedMessagesByThreadId.value, [threadId]: rest }
-      : omitKey(queuedMessagesByThreadId.value, threadId)
-    isSendingMessage.value = true
-    error.value = ''
-    shouldAutoScrollOnNextAgentEvent = true
-    setTurnSummaryForThread(threadId, null)
-    setTurnActivityForThread(threadId, { label: 'Thinking', details: buildPendingTurnDetails(selectedModelId.value, selectedReasoningEffort.value) })
-    setTurnErrorForThread(threadId, null)
-    updateLedgerThreadState(threadId, (current) => ({
-      ...current,
-      phase: 'live',
-      finalizedSnapshot: null,
-    }))
-    try {
-      await startTurnForThread(threadId, next.text, next.imageUrls, next.skills, next.fileAttachments)
-    } catch {
-      updateLedgerThreadState(threadId, (current) => ({
-        ...current,
-        phase: current.phase === 'failed' ? 'failed' : 'settled',
-        activeTurnId: '',
-      }))
-      setTurnActivityForThread(threadId, null)
-    } finally {
-      isSendingMessage.value = false
-    }
-  }
-
-  async function interruptSelectedThreadTurn(): Promise<void> {
-    const threadId = selectedThreadId.value
-    if (!threadId) return
-    if (!isThreadInProgress(threadId)) return
-    const turnId = getLedgerThreadState(threadId).activeTurnId
-
-    isInterruptingTurn.value = true
-    error.value = ''
-    try {
-      if (!turnId) {
-        throw new Error('turn/interrupt requires turnId')
-      }
-      await interruptThreadTurnRaw(threadId, turnId)
-      updateLedgerThreadState(threadId, (current) => ({
-        ...current,
-        phase: current.phase === 'failed' ? 'failed' : 'settled',
-        activeTurnId: '',
-      }))
-      setTurnActivityForThread(threadId, null)
-      setTurnErrorForThread(threadId, null)
-      pendingThreadMessageRefresh.add(threadId)
-      pendingThreadsRefresh = true
-      await syncFromNotifications()
-    } catch (unknownError) {
-      const errorMessage = unknownError instanceof Error ? unknownError.message : 'Failed to interrupt active turn'
-      setTurnErrorForThread(threadId, errorMessage)
-      error.value = errorMessage
-    } finally {
-      isInterruptingTurn.value = false
-    }
-  }
-
-  async function rollbackSelectedThread(turnIndex: number): Promise<void> {
-    const threadId = selectedThreadId.value
-    if (!threadId) return
-    if (isRollingBack.value) return
-
-    const persisted = getLedgerThreadState(threadId).confirmedTranscript
-    const maxTurnIndex = persisted.reduce((max, m) => (typeof m.turnIndex === 'number' && m.turnIndex > max ? m.turnIndex : max), -1)
-    if (maxTurnIndex < 0 || turnIndex > maxTurnIndex) return
-    const numTurns = maxTurnIndex - turnIndex + 1
-    if (numTurns < 1) return
-
-    isRollingBack.value = true
-    error.value = ''
-    try {
-      const payload = await rollbackThreadRaw(threadId, numTurns)
-      const nextMessages = normalizeThreadMessagesV2({ thread: payload.thread })
-      setConfirmedTranscriptForThread(threadId, nextMessages, { inProgress: false })
-      clearLiveLedger(threadId)
-      clearActiveLiveTextSegment(threadId)
-      setFinalizedTurnSnapshotForThread(threadId, null, { forceClear: true })
-      setTurnSummaryForThread(threadId, null)
-      setTurnActivityForThread(threadId, null)
-      setTurnErrorForThread(threadId, null)
-      pendingThreadsRefresh = true
-      await syncFromNotifications()
-    } catch (unknownError) {
-      error.value = unknownError instanceof Error ? unknownError.message : 'Failed to rollback thread'
-    } finally {
-      isRollingBack.value = false
     }
   }
 
