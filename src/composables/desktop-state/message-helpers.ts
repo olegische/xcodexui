@@ -33,6 +33,16 @@ export function areMessageFieldsEqual(first: UiMessage, second: UiMessage): bool
     && areCommandExecutionsEqual(first.commandExecution, second.commandExecution)
 }
 
+export function areMessageContentsEqual(first: UiMessage, second: UiMessage): boolean {
+  return first.role === second.role
+    && first.text === second.text
+    && first.messageType === second.messageType
+    && first.turnIndex === second.turnIndex
+    && JSON.stringify(first.images ?? []) === JSON.stringify(second.images ?? [])
+    && areFileAttachmentsEqual(first.fileAttachments, second.fileAttachments)
+    && areCommandExecutionsEqual(first.commandExecution, second.commandExecution)
+}
+
 export function areMessageArraysEqual(first: UiMessage[], second: UiMessage[]): boolean {
   return first.length === second.length && first.every((message, index) => areMessageFieldsEqual(message, second[index]))
 }

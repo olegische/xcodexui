@@ -1,6 +1,7 @@
 import type { Ref } from 'vue'
 import type { UiMessage } from '../../types/codex'
 import {
+  areMessageContentsEqual,
   areMessageFieldsEqual,
   mergeMessages,
   projectLiveTurnEvents,
@@ -117,7 +118,9 @@ export function createDesktopLedger(params: {
     const ledger = getLedgerThreadState(threadId)
     const liveMessages = projectLiveTurnEvents(ledger.liveEventLog)
     const extraMessages = (options.extraMessages ?? []).filter((message) =>
-      !ledger.confirmedTranscript.some((confirmed) => areMessageFieldsEqual(confirmed, message)),
+      !ledger.confirmedTranscript.some((confirmed) =>
+        areMessageFieldsEqual(confirmed, message) || areMessageContentsEqual(confirmed, message),
+      ),
     )
     return {
       turnId,
