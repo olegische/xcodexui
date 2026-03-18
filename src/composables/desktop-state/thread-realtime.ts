@@ -198,10 +198,6 @@ export function createThreadRealtime(params: {
       setTurnSummaryForThread(completedTurn.threadId, { turnId: completedTurn.turnId, durationMs: typeof rawDurationMs === 'number' ? Math.max(0, rawDurationMs) : 0 })
       setTurnActivityForThread(completedTurn.threadId, null)
       markThreadUnreadByEvent(completedTurn.threadId)
-      if (!shouldRetryWithFallback) {
-        clearPendingTurnRequest(completedTurn.threadId)
-        void processQueuedMessages(completedTurn.threadId)
-      }
     }
     if (turnErrorMessage) {
       const failedThreadId = completedTurn?.threadId || extractThreadIdFromNotification(notification)
