@@ -1,4 +1,5 @@
 import type { RpcEnvelope, RpcMethodCatalog } from '../types/codex'
+import type { AppServerAnyNotification, AppServerNotificationMethod, AppServerNotificationParamsByMethod } from './appServerProtocol'
 import { CodexApiError, extractErrorMessage } from './codexErrors'
 
 type RpcRequestBody = {
@@ -6,11 +7,20 @@ type RpcRequestBody = {
   params?: unknown
 }
 
-export type RpcNotification = {
-  method: string
-  params: unknown
+export type RpcNotification<
+  TMethod extends string = string,
+  TParams = unknown,
+> = {
+  method: TMethod
+  params: TParams
   atIso: string
 }
+
+export type TypedAppServerNotification<
+  TMethod extends AppServerNotificationMethod = AppServerNotificationMethod,
+> = RpcNotification<TMethod, AppServerNotificationParamsByMethod[TMethod]>
+
+export type AnyAppServerNotification = AppServerAnyNotification
 
 type ServerRequestReplyBody = {
   id: number

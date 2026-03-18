@@ -25,6 +25,10 @@ function toRawPayload(value: unknown): string {
   }
 }
 
+function readString(value: unknown): string {
+  return typeof value === 'string' ? value : ''
+}
+
 const FILE_ATTACHMENT_LINE = /^##\s+(.+?):\s+(.+?)\s*$/
 const FILES_MENTIONED_MARKER = /^#\s*files mentioned by the user\s*:?\s*$/i
 
@@ -102,6 +106,33 @@ function parseUserMessageContent(
   }
 }
 
+function formatMcpServerLabel(server: string): string {
+  if (!server) return 'server'
+  return server
+    .replace(/[_-]+/gu, ' ')
+    .replace(/\s+/gu, ' ')
+    .trim()
+}
+
+function readToolCallDetails(item: ThreadItem): string[] {
+  if (item.type === 'dynamicToolCall') {
+    return item.tool ? [item.tool] : []
+  }
+
+  if (item.type === 'mcpToolCall') {
+    if (item.tool && item.server) return [`${item.tool} tool from ${formatMcpServerLabel(item.server)}`]
+    if (item.tool) return [item.tool]
+  }
+
+  return []
+}
+
+function toolMessageText(item: ThreadItem): string {
+  const subject = readToolCallDetails(item)[0] ?? (readString((item as Record<string, unknown>).tool) || 'tool')
+  const status = readString((item as Record<string, unknown>).status)
+  return status === 'inProgress' ? `Calling ${subject}` : `Called ${subject}`
+}
+
 function toUiMessages(item: ThreadItem): UiMessage[] {
   if (item.type === 'agentMessage') {
     return [
@@ -156,6 +187,17 @@ function toUiMessages(item: ThreadItem): UiMessage[] {
         text: cmd,
         messageType: 'commandExecution',
         commandExecution: { command: cmd, cwd, status, aggregatedOutput, exitCode },
+      },
+    ]
+  }
+
+  if (item.type === 'dynamicToolCall' || item.type === 'mcpToolCall') {
+    return [
+      {
+        id: item.id,
+        role: 'system',
+        text: toolMessageText(item),
+        messageType: 'toolCall',
       },
     ]
   }

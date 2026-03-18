@@ -13,16 +13,19 @@ import type {
   ConfigReadResponse,
   ModelListResponse,
   ReasoningEffort,
+  Thread,
   ThreadListResponse,
   ThreadReadResponse,
+  ThreadRollbackResponse,
+  ThreadStartResponse,
+  TurnInterruptResponse,
+  TurnStartResponse,
 } from './appServerDtos'
 import { normalizeCodexApiError } from './codexErrors'
 import {
   normalizeThreadGroupsV2,
-  normalizeThreadMessagesV2,
-  readThreadInProgressFromResponse,
 } from './normalizers/v2'
-import type { UiMessage, UiProjectGroup } from '../types/codex'
+import type { UiProjectGroup } from '../types/codex'
 
 type CurrentModelConfig = {
   model: string
@@ -74,23 +77,32 @@ async function getThreadGroupsV2(): Promise<UiProjectGroup[]> {
   return normalizeThreadGroupsV2(payload)
 }
 
-async function getThreadMessagesV2(threadId: string): Promise<UiMessage[]> {
-  const payload = await callRpc<ThreadReadResponse>('thread/read', {
-    threadId,
-    includeTurns: true,
+export async function listThreadsRaw(): Promise<ThreadListResponse> {
+  if (IS_WASM_RUNTIME) {
+    return await wasmGateway.listThreadsRaw()
+  }
+  return await callRpc<ThreadListResponse>('thread/list', {
+    archived: false,
+    limit: 100,
+    sortKey: 'updated_at',
   })
-  return normalizeThreadMessagesV2(payload)
 }
 
-async function getThreadDetailV2(threadId: string): Promise<{ messages: UiMessage[]; inProgress: boolean }> {
-  const payload = await callRpc<ThreadReadResponse>('thread/read', {
+export async function readThreadRaw(threadId: string): Promise<ThreadReadResponse> {
+  if (IS_WASM_RUNTIME) {
+    return await wasmGateway.readThreadRaw(threadId)
+  }
+  return await callRpc<ThreadReadResponse>('thread/read', {
     threadId,
     includeTurns: true,
   })
-  return {
-    messages: normalizeThreadMessagesV2(payload),
-    inProgress: readThreadInProgressFromResponse(payload),
+}
+
+export async function rollbackThreadRaw(threadId: string, numTurns: number): Promise<ThreadRollbackResponse> {
+  if (IS_WASM_RUNTIME) {
+    return await wasmGateway.rollbackThreadRaw(threadId, numTurns)
   }
+  return await callRpc<ThreadRollbackResponse>('thread/rollback', { threadId, numTurns })
 }
 
 export async function getThreadGroups(): Promise<UiProjectGroup[]> {
@@ -101,28 +113,6 @@ export async function getThreadGroups(): Promise<UiProjectGroup[]> {
     return await getThreadGroupsV2()
   } catch (error) {
     throw normalizeCodexApiError(error, 'Failed to load thread groups', 'thread/list')
-  }
-}
-
-export async function getThreadMessages(threadId: string): Promise<UiMessage[]> {
-  if (IS_WASM_RUNTIME) {
-    return await wasmGateway.getThreadMessages(threadId)
-  }
-  try {
-    return await getThreadMessagesV2(threadId)
-  } catch (error) {
-    throw normalizeCodexApiError(error, `Failed to load thread ${threadId}`, 'thread/read')
-  }
-}
-
-export async function getThreadDetail(threadId: string): Promise<{ messages: UiMessage[]; inProgress: boolean }> {
-  if (IS_WASM_RUNTIME) {
-    return await wasmGateway.getThreadDetail(threadId)
-  }
-  try {
-    return await getThreadDetailV2(threadId)
-  } catch (error) {
-    throw normalizeCodexApiError(error, `Failed to load thread ${threadId}`, 'thread/read')
   }
 }
 
@@ -184,14 +174,6 @@ export async function renameThread(threadId: string, threadName: string): Promis
   await callRpc('thread/name/set', { threadId, name: threadName })
 }
 
-export async function rollbackThread(threadId: string, numTurns: number): Promise<UiMessage[]> {
-  if (IS_WASM_RUNTIME) {
-    return await wasmGateway.rollbackThread(threadId, numTurns)
-  }
-  const payload = await callRpc<ThreadReadResponse>('thread/rollback', { threadId, numTurns })
-  return normalizeThreadMessagesV2(payload)
-}
-
 function normalizeThreadIdFromPayload(payload: unknown): string {
   if (!payload || typeof payload !== 'object') return ''
   const record = payload as Record<string, unknown>
@@ -227,6 +209,20 @@ export async function startThread(cwd?: string, model?: string): Promise<string>
   } catch (error) {
     throw normalizeCodexApiError(error, 'Failed to start a new thread', 'thread/start')
   }
+}
+
+export async function startThreadRaw(cwd?: string, model?: string): Promise<ThreadStartResponse> {
+  if (IS_WASM_RUNTIME) {
+    return await wasmGateway.startThreadRaw(cwd, model)
+  }
+  const params: Record<string, unknown> = {}
+  if (typeof cwd === 'string' && cwd.trim().length > 0) {
+    params.cwd = cwd.trim()
+  }
+  if (typeof model === 'string' && model.trim().length > 0) {
+    params.model = model.trim()
+  }
+  return await callRpc<ThreadStartResponse>('thread/start', params)
 }
 
 export type FileAttachmentParam = { label: string; path: string; fsPath: string }
@@ -290,6 +286,30 @@ export async function startThreadTurn(
   }
 }
 
+export async function startThreadTurnRaw(
+  threadId: string,
+  input: Array<Record<string, unknown>>,
+  overrides?: { model?: string; effort?: ReasoningEffort; attachments?: FileAttachmentParam[] },
+): Promise<TurnStartResponse> {
+  if (IS_WASM_RUNTIME) {
+    return await wasmGateway.startThreadTurnRaw(threadId, input as Array<any>, overrides)
+  }
+  const params: Record<string, unknown> = {
+    threadId,
+    input,
+  }
+  if (overrides?.attachments && overrides.attachments.length > 0) {
+    params.attachments = overrides.attachments.map((f) => ({ label: f.label, path: f.path, fsPath: f.fsPath }))
+  }
+  if (typeof overrides?.model === 'string' && overrides.model.length > 0) {
+    params.model = overrides.model
+  }
+  if (typeof overrides?.effort === 'string' && overrides.effort.length > 0) {
+    params.effort = overrides.effort
+  }
+  return await callRpc<TurnStartResponse>('turn/start', params)
+}
+
 export async function interruptThreadTurn(threadId: string, turnId?: string): Promise<void> {
   if (IS_WASM_RUNTIME) {
     return await wasmGateway.interruptThreadTurn(threadId, turnId)
@@ -306,6 +326,16 @@ export async function interruptThreadTurn(threadId: string, turnId?: string): Pr
   } catch (error) {
     throw normalizeCodexApiError(error, `Failed to interrupt turn for thread ${normalizedThreadId}`, 'turn/interrupt')
   }
+}
+
+export async function interruptThreadTurnRaw(threadId: string, turnId: string): Promise<TurnInterruptResponse> {
+  if (IS_WASM_RUNTIME) {
+    return await wasmGateway.interruptThreadTurnRaw(threadId, turnId)
+  }
+  return await callRpc<TurnInterruptResponse>('turn/interrupt', {
+    threadId: threadId.trim(),
+    turnId: turnId.trim(),
+  })
 }
 
 export async function setDefaultModel(model: string): Promise<void> {

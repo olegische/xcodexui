@@ -2,13 +2,54 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "definitions": {
     "AskForApproval": {
-      "enum": [
-        "untrusted",
-        "on-failure",
-        "on-request",
-        "never"
-      ],
-      "type": "string"
+      "oneOf": [
+        {
+          "enum": [
+            "untrusted",
+            "on-failure",
+            "on-request",
+            "never"
+          ],
+          "type": "string"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "reject": {
+              "properties": {
+                "mcp_elicitations": {
+                  "type": "boolean"
+                },
+                "request_permissions": {
+                  "default": false,
+                  "type": "boolean"
+                },
+                "rules": {
+                  "type": "boolean"
+                },
+                "sandbox_approval": {
+                  "type": "boolean"
+                },
+                "skill_approval": {
+                  "default": false,
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "mcp_elicitations",
+                "rules",
+                "sandbox_approval"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "reject"
+          ],
+          "title": "RejectAskForApproval",
+          "type": "object"
+        }
+      ]
     },
     "DynamicToolSpec": {
       "properties": {
@@ -40,6 +81,13 @@
         "read-only",
         "workspace-write",
         "danger-full-access"
+      ],
+      "type": "string"
+    },
+    "ServiceTier": {
+      "enum": [
+        "fast",
+        "flex"
       ],
       "type": "string"
     }
@@ -80,30 +128,9 @@
         "null"
       ]
     },
-    "dynamicTools": {
-      "items": {
-        "$ref": "#/definitions/DynamicToolSpec"
-      },
-      "type": [
-        "array",
-        "null"
-      ]
-    },
     "ephemeral": {
       "type": [
         "boolean",
-        "null"
-      ]
-    },
-    "experimentalRawEvents": {
-      "default": false,
-      "description": "If true, opt into emitting raw Responses API items on the event stream. This is for internal use only (e.g. Codex Cloud).",
-      "type": "boolean"
-    },
-    "mockExperimentalField": {
-      "description": "Test-only experimental field used to validate experimental gating and schema filtering behavior in a stable way.",
-      "type": [
-        "string",
         "null"
       ]
     },
@@ -119,11 +146,6 @@
         "null"
       ]
     },
-    "persistExtendedHistory": {
-      "default": false,
-      "description": "If true, persist additional rollout EventMsg variants required to reconstruct a richer thread history on resume/fork/read.",
-      "type": "boolean"
-    },
     "personality": {
       "anyOf": [
         {
@@ -138,6 +160,29 @@
       "anyOf": [
         {
           "$ref": "#/definitions/SandboxMode"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "serviceName": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "serviceTier": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/ServiceTier"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         {
           "type": "null"

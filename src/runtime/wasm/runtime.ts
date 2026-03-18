@@ -3,12 +3,15 @@ import {
   createBrowserRuntimeHostFromDeps,
   createNormalizedModelTurnRunner,
 } from '@browser-codex/wasm-browser-host/runtime-host'
-import { createBrowserCodexRuntime } from '@browser-codex/wasm-browser-codex-runtime'
+import {
+  createBrowserCodexRuntime,
+  type BrowserCodexProtocolClient,
+} from '@browser-codex/wasm-browser-codex-runtime'
 import {
   createBrowserAwareToolExecutor,
   initializePageTelemetry,
 } from '@browser-codex/wasm-browser-tools'
-import { threadToSessionSnapshot, turnIdFromNotification } from '@browser-codex/wasm-runtime-core'
+import { threadToSessionSnapshot } from '@browser-codex/wasm-runtime-core'
 import { loadRuntimeModule } from '@browser-codex/app-webui-runtime/assets'
 import { DEFAULT_CODEX_CONFIG, DEFAULT_DEMO_INSTRUCTIONS } from '@browser-codex/app-webui-runtime/constants'
 import type {
@@ -25,7 +28,6 @@ import {
 } from '@browser-codex/app-webui-runtime/workspace'
 import type { RpcNotification } from '../../api/codexRpcClient'
 import { BROWSER_WORKSPACE_ROOT } from '../../config/runtime'
-import { emitWasmNotification, subscribeWasmNotifications } from './notificationBus'
 import {
   clearStoredAuthState,
   loadStoredAuthState,
@@ -39,23 +41,13 @@ import {
 } from './storage'
 import { webUiModelTransportAdapter } from './modelTransport'
 
-type RuntimeEvent = {
-  method: string
-  params: unknown
-}
-
 type SessionSnapshot = {
   threadId: string
   metadata: unknown
   items: unknown[]
 }
 
-type RuntimeDispatch = {
-  value: SessionSnapshot
-  events: RuntimeEvent[]
-}
-
-type WasmBrowserRuntime = {
+type WasmBrowserRuntime = BrowserCodexProtocolClient & {
   loadAuthState(): Promise<AuthState | null>
   saveAuthState(authState: AuthState): Promise<void>
   clearAuthState(): Promise<void>
@@ -63,15 +55,6 @@ type WasmBrowserRuntime = {
     data: ModelPreset[]
     nextCursor: string | null
   }>
-  startThread(request: { threadId: string; metadata: unknown }): Promise<RuntimeDispatch>
-  resumeThread(request: { threadId: string }): Promise<RuntimeDispatch>
-  runTurn(request: {
-    threadId: string
-    turnId: string
-    input: unknown
-    modelPayload: unknown
-  }): Promise<RuntimeDispatch>
-  cancelModelTurn(requestId: string): Promise<void>
 }
 
 type WasmRuntimeContext = {
@@ -84,35 +67,6 @@ type WasmRuntimeContext = {
 let runtimeContextPromise: Promise<WasmRuntimeContext> | null = null
 const browserToolExecutor = createBrowserAwareToolExecutor()
 let pageTelemetryInitialized = false
-
-function actualThreadIdFromSnapshot(snapshot: SessionSnapshot): string | null {
-  if (
-    snapshot.metadata !== null &&
-    typeof snapshot.metadata === 'object' &&
-    !Array.isArray(snapshot.metadata) &&
-    typeof (snapshot.metadata as Record<string, unknown>).id === 'string'
-  ) {
-    return (snapshot.metadata as Record<string, unknown>).id as string
-  }
-  return null
-}
-
-function turnIdFromRuntimeEvent(event: RuntimeEvent): string | null {
-  const params =
-    event.params === null ||
-    typeof event.params === 'string' ||
-    typeof event.params === 'number' ||
-    typeof event.params === 'boolean' ||
-    Array.isArray(event.params) ||
-    typeof event.params === 'object'
-      ? event.params
-      : null
-
-  return turnIdFromNotification({
-    method: event.method,
-    params,
-  } as Parameters<typeof turnIdFromNotification>[0])
-}
 
 export async function getWasmRuntimeContext(): Promise<WasmRuntimeContext> {
   if (runtimeContextPromise) {
@@ -205,8 +159,6 @@ export async function getWasmRuntimeContext(): Promise<WasmRuntimeContext> {
       CodexCompatibleConfig,
       { email: string | null; planType: string | null; chatgptAccountId: string | null; authMode: string | null } | null,
       ModelPreset,
-      RuntimeDispatch,
-      RuntimeEvent,
       SessionSnapshot,
       never
     >({
@@ -252,43 +204,13 @@ export async function getWasmRuntimeContext(): Promise<WasmRuntimeContext> {
         threadToSnapshot(thread) {
           return threadToSessionSnapshot(thread) as unknown as SessionSnapshot
         },
-        withRequestedThreadId(snapshot, requestedThreadId) {
-          return {
-            ...snapshot,
-            threadId: requestedThreadId,
-          }
-        },
-        buildDispatch(snapshot, events) {
-          return {
-            value: snapshot,
-            events,
-          }
-        },
-        mapNotificationToEvent(notification) {
-          return {
-            method: notification.method,
-            params: ('params' in notification ? notification.params : null) as RuntimeEvent['params'],
-          }
-        },
-        emitRuntimeEvents(events) {
-          for (const event of events) {
-            emitWasmNotification(event.method, event.params)
-          }
-        },
-        turnIdFromRuntimeEvent(event) {
-          return turnIdFromRuntimeEvent(event)
-        },
-        isTurnCompletedEvent(event) {
-          return event.method === 'turn/completed'
-        },
         formatError,
         async requestUserInput() {
           return { answers: [] }
         },
-        actualThreadIdFromSnapshot,
         logScope: 'xcodexui-wasm',
       },
-    })
+    }) as WasmBrowserRuntime
 
     return {
       runtime,
@@ -296,7 +218,13 @@ export async function getWasmRuntimeContext(): Promise<WasmRuntimeContext> {
       saveConfig: saveStoredCodexConfig,
       loadSession: loadStoredSession,
       subscribe(listener) {
-        return subscribeWasmNotifications(listener)
+        return runtime.subscribeToNotifications((notification) => {
+          listener({
+            method: notification.method,
+            params: notification.params,
+            atIso: new Date().toISOString(),
+          })
+        })
       },
     }
   })()

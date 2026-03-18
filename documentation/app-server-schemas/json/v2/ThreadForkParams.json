@@ -2,19 +2,67 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "definitions": {
     "AskForApproval": {
-      "enum": [
-        "untrusted",
-        "on-failure",
-        "on-request",
-        "never"
-      ],
-      "type": "string"
+      "oneOf": [
+        {
+          "enum": [
+            "untrusted",
+            "on-failure",
+            "on-request",
+            "never"
+          ],
+          "type": "string"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "reject": {
+              "properties": {
+                "mcp_elicitations": {
+                  "type": "boolean"
+                },
+                "request_permissions": {
+                  "default": false,
+                  "type": "boolean"
+                },
+                "rules": {
+                  "type": "boolean"
+                },
+                "sandbox_approval": {
+                  "type": "boolean"
+                },
+                "skill_approval": {
+                  "default": false,
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "mcp_elicitations",
+                "rules",
+                "sandbox_approval"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "reject"
+          ],
+          "title": "RejectAskForApproval",
+          "type": "object"
+        }
+      ]
     },
     "SandboxMode": {
       "enum": [
         "read-only",
         "workspace-write",
         "danger-full-access"
+      ],
+      "type": "string"
+    },
+    "ServiceTier": {
+      "enum": [
+        "fast",
+        "flex"
       ],
       "type": "string"
     }
@@ -56,6 +104,9 @@
         "null"
       ]
     },
+    "ephemeral": {
+      "type": "boolean"
+    },
     "model": {
       "description": "Configuration overrides for the forked thread, if any.",
       "type": [
@@ -69,22 +120,27 @@
         "null"
       ]
     },
-    "path": {
-      "description": "[UNSTABLE] Specify the rollout path to fork from. If specified, the thread_id param will be ignored.",
-      "type": [
-        "string",
-        "null"
-      ]
-    },
-    "persistExtendedHistory": {
-      "default": false,
-      "description": "If true, persist additional rollout EventMsg variants required to reconstruct a richer thread history on subsequent resume/fork/read.",
-      "type": "boolean"
-    },
     "sandbox": {
       "anyOf": [
         {
           "$ref": "#/definitions/SandboxMode"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "serviceTier": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/ServiceTier"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         {
           "type": "null"

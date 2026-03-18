@@ -1,4 +1,14 @@
-import type { ReasoningEffort } from './appServerDtos'
+import type {
+  ReasoningEffort,
+  ThreadListResponse,
+  ThreadReadResponse,
+  ThreadRollbackResponse,
+  ThreadSourceKind,
+  ThreadStartResponse,
+  TurnInterruptResponse,
+  TurnStartResponse,
+  UserInput,
+} from './appServerDtos'
 import type { RpcNotification } from './codexRpcClient'
 import { normalizeThreadMessagesV2, readThreadInProgressFromResponse } from './normalizers/v2'
 import type { UiMessage, UiProjectGroup } from '../types/codex'
@@ -29,6 +39,19 @@ type SkillInfo = {
   scope: string
   enabled: boolean
 }
+
+const THREAD_LIST_SOURCE_KINDS: ThreadSourceKind[] = [
+  'cli',
+  'vscode',
+  'exec',
+  'appServer',
+  'subAgent',
+  'subAgentReview',
+  'subAgentCompact',
+  'subAgentThreadSpawn',
+  'subAgentOther',
+  'unknown',
+]
 
 function toIso(seconds: unknown): string {
   return typeof seconds === 'number' && Number.isFinite(seconds)
@@ -84,12 +107,15 @@ function pickPreviewAndTitle(thread: unknown): { preview: string; title: string 
   }
 }
 
-async function syncThreadIndexFromSnapshot(snapshot: { threadId: string; metadata: unknown }): Promise<WasmThreadIndexEntry> {
-  const actualThreadId = extractActualThreadId(snapshot)
+async function syncThreadIndexFromThread(threadValue: unknown): Promise<WasmThreadIndexEntry> {
   const thread =
-    snapshot.metadata !== null && typeof snapshot.metadata === 'object' && !Array.isArray(snapshot.metadata)
-      ? snapshot.metadata as Record<string, unknown>
+    threadValue !== null && typeof threadValue === 'object' && !Array.isArray(threadValue)
+      ? threadValue as Record<string, unknown>
       : {}
+  const actualThreadId =
+    typeof thread.id === 'string' && thread.id.length > 0
+      ? thread.id
+      : extractActualThreadId({ threadId: 'thread', metadata: thread })
   const { preview, title } = pickPreviewAndTitle(thread)
   const cwd = typeof thread.cwd === 'string' && thread.cwd.trim().length > 0
     ? thread.cwd.trim()
@@ -104,6 +130,10 @@ async function syncThreadIndexFromSnapshot(snapshot: { threadId: string; metadat
     archived: false,
     lastPreview: preview,
   })
+}
+
+async function syncThreadIndexFromSnapshot(snapshot: { threadId: string; metadata: unknown }): Promise<WasmThreadIndexEntry> {
+  return await syncThreadIndexFromThread(snapshot.metadata)
 }
 
 function groupIndexedThreads(entries: WasmThreadIndexEntry[]): UiProjectGroup[] {
@@ -141,6 +171,7 @@ function groupIndexedThreads(entries: WasmThreadIndexEntry[]): UiProjectGroup[] 
 }
 
 export async function getThreadGroups(): Promise<UiProjectGroup[]> {
+  await listThreadsRaw().catch(() => null)
   return groupIndexedThreads(await listIndexedThreads())
 }
 
@@ -150,14 +181,7 @@ export async function getThreadMessages(threadId: string): Promise<UiMessage[]> 
 }
 
 export async function getThreadDetail(threadId: string): Promise<{ messages: UiMessage[]; inProgress: boolean }> {
-  const context = await getWasmRuntimeContext()
-  let snapshot = await context.loadSession(threadId)
-  if (snapshot === null) {
-    const dispatch = await context.runtime.resumeThread({ threadId })
-    snapshot = dispatch.value
-  }
-  await syncThreadIndexFromSnapshot(snapshot)
-  const payload = { thread: snapshot.metadata } as any
+  const payload = await readThreadRaw(threadId)
   return {
     messages: normalizeThreadMessagesV2(payload),
     inProgress: readThreadInProgressFromResponse(payload),
@@ -189,7 +213,11 @@ export async function getPendingServerRequests(): Promise<unknown[]> {
 
 export async function resumeThread(threadId: string): Promise<void> {
   const { runtime } = await getWasmRuntimeContext()
-  await runtime.resumeThread({ threadId })
+  const response = await runtime.threadResume({
+    threadId,
+    persistExtendedHistory: true,
+  })
+  await syncThreadIndexFromThread(response.thread)
 }
 
 export async function archiveThread(threadId: string): Promise<void> {
@@ -204,26 +232,13 @@ export async function renameThread(threadId: string, threadName: string): Promis
 }
 
 export async function rollbackThread(threadId: string, _numTurns: number): Promise<UiMessage[]> {
-  return await getThreadMessages(threadId)
+  const payload = await rollbackThreadRaw(threadId, _numTurns)
+  return normalizeThreadMessagesV2(payload)
 }
 
 export async function startThread(cwd?: string, model?: string): Promise<string> {
-  const context = await getWasmRuntimeContext()
-  if (typeof model === 'string' && model.trim().length > 0) {
-    const config = await context.loadConfig()
-    await context.saveConfig({
-      ...config,
-      model: model.trim(),
-    })
-  }
-  const requestedId = crypto.randomUUID()
-  const dispatch = await context.runtime.startThread({
-    threadId: requestedId,
-    metadata: {
-      workspaceRoot: cwd?.trim() || BROWSER_WORKSPACE_ROOT,
-    },
-  })
-  const entry = await syncThreadIndexFromSnapshot(dispatch.value)
+  const payload = await startThreadRaw(cwd, model)
+  const entry = await syncThreadIndexFromThread(payload.thread)
   return entry.id
 }
 
@@ -236,38 +251,114 @@ export async function startThreadTurn(
   _skills?: Array<{ name: string; path: string }>,
   fileAttachments: Array<{ label: string; path: string; fsPath: string }> = [],
 ): Promise<void> {
+  const payloadInput = buildProtocolTurnInput(text, _imageUrls, _skills ?? [], fileAttachments)
+  await startThreadTurnRaw(threadId, payloadInput, {
+    model,
+    effort,
+  })
+  const payload = await readThreadRaw(threadId).catch(() => null)
+  if (payload !== null) {
+    await syncThreadIndexFromThread(payload.thread)
+  }
+}
+
+function buildProtocolTurnInput(
+  text: string,
+  imageUrls: string[],
+  skills: Array<{ name: string; path: string }>,
+  fileAttachments: Array<{ label: string; path: string; fsPath: string }>,
+): UserInput[] {
+  const finalText = buildTextWithAttachments(text, fileAttachments)
+  const input: UserInput[] = [{ type: 'text', text: finalText, text_elements: [] }]
+  for (const imageUrl of imageUrls) {
+    const normalizedUrl = imageUrl.trim()
+    if (!normalizedUrl) continue
+    input.push({
+      type: 'image',
+      url: normalizedUrl,
+    })
+  }
+  for (const skill of skills) {
+    input.push({ type: 'skill', name: skill.name, path: skill.path })
+  }
+  return input
+}
+
+export async function listThreadsRaw(): Promise<ThreadListResponse> {
+  const { runtime } = await getWasmRuntimeContext()
+  const payload = await runtime.threadList({
+    archived: false,
+    limit: 100,
+    sortKey: 'updated_at',
+    sourceKinds: THREAD_LIST_SOURCE_KINDS,
+  })
+  await Promise.all(payload.data.map(async (thread) => {
+    await syncThreadIndexFromThread(thread)
+  }))
+  return payload
+}
+
+export async function readThreadRaw(threadId: string): Promise<ThreadReadResponse> {
+  const { runtime } = await getWasmRuntimeContext()
+  const payload = await runtime.threadRead({
+    threadId,
+    includeTurns: true,
+  })
+  await syncThreadIndexFromThread(payload.thread)
+  return payload
+}
+
+export async function rollbackThreadRaw(threadId: string, numTurns: number): Promise<ThreadRollbackResponse> {
+  const { runtime } = await getWasmRuntimeContext()
+  const payload = await runtime.threadRollback({ threadId, numTurns })
+  await syncThreadIndexFromThread(payload.thread)
+  return payload
+}
+
+export async function startThreadRaw(cwd?: string, model?: string): Promise<ThreadStartResponse> {
+  const { runtime } = await getWasmRuntimeContext()
+  const payload = await runtime.threadStart({
+    cwd: cwd?.trim() || BROWSER_WORKSPACE_ROOT,
+    model: typeof model === 'string' && model.trim().length > 0 ? model.trim() : null,
+    experimentalRawEvents: false,
+    persistExtendedHistory: true,
+  })
+  await syncThreadIndexFromThread(payload.thread)
+  return payload
+}
+
+export async function startThreadTurnRaw(
+  threadId: string,
+  input: UserInput[],
+  overrides?: { model?: string; effort?: ReasoningEffort },
+): Promise<TurnStartResponse> {
   const context = await getWasmRuntimeContext()
   const currentConfig = await context.loadConfig()
   const nextConfig = {
     ...currentConfig,
-    model: typeof model === 'string' && model.trim().length > 0 ? model.trim() : currentConfig.model,
-    modelReasoningEffort: typeof effort === 'string' && effort.length > 0 ? effort : currentConfig.modelReasoningEffort,
+    model: typeof overrides?.model === 'string' && overrides.model.trim().length > 0 ? overrides.model.trim() : currentConfig.model,
+    modelReasoningEffort:
+      typeof overrides?.effort === 'string' && overrides.effort.length > 0 ? overrides.effort : currentConfig.modelReasoningEffort,
   }
   await context.saveConfig(nextConfig)
-  const dispatch = await context.runtime.runTurn({
+  return await context.runtime.turnStart({
     threadId,
-    turnId: crypto.randomUUID(),
-    input: [
-      {
-        type: 'message',
-        role: 'user',
-        content: [{ type: 'input_text', text: buildTextWithAttachments(text, fileAttachments) }],
-      },
-    ],
-    modelPayload: {
-      mode: 'chat',
-      model: nextConfig.model,
-      reasoningEffort: nextConfig.modelReasoningEffort,
-      personality: nextConfig.personality,
-    },
+    input,
+    model: nextConfig.model || null,
+    effort: typeof nextConfig.modelReasoningEffort === 'string' && nextConfig.modelReasoningEffort.length > 0
+      ? nextConfig.modelReasoningEffort as ReasoningEffort
+      : null,
   })
-  await syncThreadIndexFromSnapshot(dispatch.value)
 }
 
-export async function interruptThreadTurn(_threadId: string, turnId?: string): Promise<void> {
+export async function interruptThreadTurn(threadId: string, turnId?: string): Promise<void> {
   if (!turnId) return
+  await interruptThreadTurnRaw(threadId, turnId)
+}
+
+export async function interruptThreadTurnRaw(threadId: string, turnId: string): Promise<TurnInterruptResponse> {
   const { runtime } = await getWasmRuntimeContext()
-  await runtime.cancelModelTurn(turnId)
+  return await runtime.turnInterrupt({ threadId, turnId })
 }
 
 export async function setDefaultModel(model: string): Promise<void> {
