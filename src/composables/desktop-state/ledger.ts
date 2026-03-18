@@ -1,6 +1,7 @@
 import type { Ref } from 'vue'
 import type { UiMessage } from '../../types/codex'
 import {
+  areMessageFieldsEqual,
   mergeMessages,
   projectLiveTurnEvents,
   shouldPreserveFinalizedSnapshot,
@@ -108,12 +109,19 @@ export function createDesktopLedger(params: {
     }))
   }
 
-  function buildFinalizedTurnSnapshot(threadId: string, turnId: string): FinalizedTurnSnapshotState {
+  function buildFinalizedTurnSnapshot(
+    threadId: string,
+    turnId: string,
+    options: { extraMessages?: UiMessage[] } = {},
+  ): FinalizedTurnSnapshotState {
     const ledger = getLedgerThreadState(threadId)
     const liveMessages = projectLiveTurnEvents(ledger.liveEventLog)
+    const extraMessages = (options.extraMessages ?? []).filter((message) =>
+      !ledger.confirmedTranscript.some((confirmed) => areMessageFieldsEqual(confirmed, message)),
+    )
     return {
       turnId,
-      messages: [...ledger.confirmedTranscript, ...liveMessages],
+      messages: [...ledger.confirmedTranscript, ...extraMessages, ...liveMessages],
     }
   }
 

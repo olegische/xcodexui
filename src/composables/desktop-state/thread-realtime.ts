@@ -61,7 +61,7 @@ export function createThreadRealtime(params: {
   updateLedgerThreadState: (threadId: string, updater: (current: any) => any) => void
   setConfirmedTranscriptForThread: (threadId: string, messages: any[], options?: { inProgress: boolean }) => void
   setFinalizedTurnSnapshotForThread: (threadId: string, snapshot: any | null, options?: { forceClear?: boolean }) => void
-  buildFinalizedTurnSnapshot: (threadId: string, turnId: string) => any
+  buildFinalizedTurnSnapshot: (threadId: string, turnId: string, options?: { extraMessages?: any[] }) => any
   clearActiveLiveTextSegment: (threadId: string) => void
   appendLiveTextSegment: (threadId: string, kind: 'assistant' | 'reasoning', itemId: string, delta: string) => void
   hasLiveTextSegmentsForItem: (threadId: string, kind: 'assistant' | 'reasoning', itemId: string) => boolean
@@ -289,7 +289,28 @@ export function createThreadRealtime(params: {
       shouldAutoScrollRef.value = false
       clearActiveLiveTextSegment(notificationThreadId)
       const completedTurnId = completedTurn?.turnId || readString(asRecord(asRecord(notification.params)?.turn)?.id) || getLedgerThreadState(notificationThreadId).activeTurnId || `${notificationThreadId}:unknown`
-      setFinalizedTurnSnapshotForThread(notificationThreadId, buildFinalizedTurnSnapshot(notificationThreadId, completedTurnId))
+      const pending = pendingTurnRequestByThreadId.value[notificationThreadId]
+      const pendingUserMessage = pending
+        ? {
+            id: `pending-user:${notificationThreadId}`,
+            role: 'user' as const,
+            text: pending.text,
+            images: pending.imageUrls.length > 0 ? [...pending.imageUrls] : undefined,
+            fileAttachments: pending.fileAttachments.length > 0
+              ? pending.fileAttachments.map((file: { label: string; path: string }) => ({
+                  label: file.label,
+                  path: file.path,
+                }))
+              : undefined,
+            messageType: 'userMessage',
+          }
+        : null
+      setFinalizedTurnSnapshotForThread(
+        notificationThreadId,
+        buildFinalizedTurnSnapshot(notificationThreadId, completedTurnId, {
+          extraMessages: pendingUserMessage ? [pendingUserMessage] : [],
+        }),
+      )
       clearLiveLedger(notificationThreadId)
       updateLedgerThreadState(notificationThreadId, (current) => ({ ...current, phase: 'finalizing', activeTurnId: '' }))
       const completedThreadId2 = extractThreadIdFromNotification(notification)
