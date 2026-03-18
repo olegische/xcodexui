@@ -38,6 +38,7 @@ import type {
 } from '../../types/codex'
 import {
   areCommandExecutionsEqual as areCommandExecutionsEqualHelper,
+  areToolCallsEqual as areToolCallsEqualHelper,
   areFileAttachmentsEqual as areFileAttachmentsEqualHelper,
   areTurnActivitiesEqual as areTurnActivitiesEqualHelper,
   areTurnSummariesEqual as areTurnSummariesEqualHelper,
@@ -150,6 +151,7 @@ const orderGroupsByProjectOrder = orderGroupsByProjectOrderHelper
 const areStringArraysEqual = areStringArraysEqualHelper
 const reorderStringArray = reorderStringArrayHelper
 const areCommandExecutionsEqual = areCommandExecutionsEqualHelper
+const areToolCallsEqual = areToolCallsEqualHelper
 
 function isUnsupportedChatGptModelError(error: unknown): boolean {
   if (!(error instanceof Error)) return false
@@ -170,6 +172,7 @@ function areMessageFieldsEqual(first: UiMessage, second: UiMessage): boolean {
     first.rawPayload === second.rawPayload &&
     first.isUnhandled === second.isUnhandled &&
     areCommandExecutionsEqual(first.commandExecution, second.commandExecution) &&
+    areToolCallsEqual(first.toolCall, second.toolCall) &&
     first.turnIndex === second.turnIndex
   )
 }

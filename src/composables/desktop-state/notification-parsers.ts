@@ -1,5 +1,5 @@
 import type { RpcNotification } from '../../api/codexGateway'
-import type { CommandExecutionData, UiMessage, UiServerRequest } from '../../types/codex'
+import type { CommandExecutionData, ToolCallData, UiMessage, UiServerRequest } from '../../types/codex'
 import type {
   TurnActivityState,
   TurnCompletedInfo,
@@ -292,7 +292,7 @@ export function readToolCallStarted(notification: RpcNotification): UiMessage | 
   const itemType = readString(item?.type).toLowerCase()
   if (!item || (itemType !== 'dynamictoolcall' && itemType !== 'mcptoolcall')) return null
   const id = readString(item.id)
-  return id ? { id, role: 'system', text: toolMessageText('calling', item), messageType: 'toolCall' } : null
+  return id ? { id, role: 'system', text: toolMessageText('calling', item), messageType: 'toolCall', toolCall: readToolCallData(item) } : null
 }
 
 export function readToolCallCompleted(notification: RpcNotification): UiMessage | null {
@@ -301,7 +301,64 @@ export function readToolCallCompleted(notification: RpcNotification): UiMessage 
   const itemType = readString(item?.type).toLowerCase()
   if (!item || (itemType !== 'dynamictoolcall' && itemType !== 'mcptoolcall')) return null
   const id = readString(item.id)
-  return id ? { id, role: 'system', text: toolMessageText('called', item), messageType: 'toolCall' } : null
+  return id ? { id, role: 'system', text: toolMessageText('called', item), messageType: 'toolCall', toolCall: readToolCallData(item) } : null
+}
+
+function readToolCallData(item: Record<string, unknown>): ToolCallData {
+  const itemType = readString(item.type).toLowerCase()
+  const kind: ToolCallData['kind'] = itemType === 'mcptoolcall' ? 'mcp' : 'dynamic'
+  const status = readToolCallStatus(readString(item.status))
+  const tool = readString(item.tool) || '(tool)'
+  const server = readString(item.server) || null
+  const argumentsText = stringifyToolPayload(item.arguments)
+
+  if (kind === 'mcp') {
+    return {
+      kind,
+      tool,
+      server,
+      status,
+      argumentsText,
+      outputText: stringifyToolPayload(item.result) || stringifyToolPayload(item.error),
+    }
+  }
+
+  return {
+    kind,
+    tool,
+    server,
+    status,
+    argumentsText,
+    outputText: stringifyDynamicToolContent(item.contentItems),
+  }
+}
+
+function readToolCallStatus(status: string): ToolCallData['status'] {
+  if (status === 'inprogress' || status === 'in_progress') return 'inProgress'
+  if (status === 'failed') return 'failed'
+  return 'completed'
+}
+
+function stringifyToolPayload(value: unknown): string {
+  if (value == null) return ''
+  if (typeof value === 'string') return value
+  try {
+    return JSON.stringify(value, null, 2)
+  } catch {
+    return String(value)
+  }
+}
+
+function stringifyDynamicToolContent(value: unknown): string {
+  if (!Array.isArray(value)) return ''
+  const chunks = value.flatMap((entry) => {
+    const record = asRecord(entry)
+    if (!record) return []
+    if (record.type === 'inputText' && typeof record.text === 'string') return [record.text]
+    if (record.type === 'inputImage' && typeof record.imageUrl === 'string') return [`[image] ${record.imageUrl}`]
+    return []
+  })
+  return chunks.join('\n\n')
 }
 
 export function isAgentContentEvent(notification: RpcNotification): boolean {

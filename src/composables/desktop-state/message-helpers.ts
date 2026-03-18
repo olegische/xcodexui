@@ -1,4 +1,4 @@
-import type { CommandExecutionData, UiFileAttachment, UiMessage } from '../../types/codex'
+import type { CommandExecutionData, ToolCallData, UiFileAttachment, UiMessage } from '../../types/codex'
 import type {
   FinalizedTurnSnapshotState,
   LiveTurnEvent,
@@ -7,6 +7,10 @@ import type {
 } from './types'
 
 export function areCommandExecutionsEqual(first?: CommandExecutionData, second?: CommandExecutionData): boolean {
+  return JSON.stringify(first ?? null) === JSON.stringify(second ?? null)
+}
+
+export function areToolCallsEqual(first?: ToolCallData, second?: ToolCallData): boolean {
   return JSON.stringify(first ?? null) === JSON.stringify(second ?? null)
 }
 
@@ -31,6 +35,7 @@ export function areMessageFieldsEqual(first: UiMessage, second: UiMessage): bool
     && JSON.stringify(first.images ?? []) === JSON.stringify(second.images ?? [])
     && areFileAttachmentsEqual(first.fileAttachments, second.fileAttachments)
     && areCommandExecutionsEqual(first.commandExecution, second.commandExecution)
+    && areToolCallsEqual(first.toolCall, second.toolCall)
 }
 
 export function areMessageContentsEqual(first: UiMessage, second: UiMessage): boolean {
@@ -41,6 +46,7 @@ export function areMessageContentsEqual(first: UiMessage, second: UiMessage): bo
     && JSON.stringify(first.images ?? []) === JSON.stringify(second.images ?? [])
     && areFileAttachmentsEqual(first.fileAttachments, second.fileAttachments)
     && areCommandExecutionsEqual(first.commandExecution, second.commandExecution)
+    && areToolCallsEqual(first.toolCall, second.toolCall)
 }
 
 export function areMessageArraysEqual(first: UiMessage[], second: UiMessage[]): boolean {

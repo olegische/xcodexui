@@ -79,6 +79,15 @@ export type CommandExecutionData = {
   exitCode: number | null
 }
 
+export type ToolCallData = {
+  kind: 'dynamic' | 'mcp'
+  tool: string
+  server: string | null
+  status: 'inProgress' | 'completed' | 'failed'
+  argumentsText: string
+  outputText: string
+}
+
 export type UiFileAttachment = { label: string; path: string }
 
 export type UiMessage = {
@@ -91,6 +100,7 @@ export type UiMessage = {
   rawPayload?: string
   isUnhandled?: boolean
   commandExecution?: CommandExecutionData
+  toolCall?: ToolCallData
   turnIndex?: number
 }
 

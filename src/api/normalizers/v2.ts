@@ -6,7 +6,7 @@ import type {
   Turn,
   UserInput,
 } from '../appServerDtos'
-import type { CommandExecutionData, UiFileAttachment, UiMessage, UiProjectGroup, UiThread } from '../../types/codex'
+import type { CommandExecutionData, ToolCallData, UiFileAttachment, UiMessage, UiProjectGroup, UiThread } from '../../types/codex'
 
 function toIso(seconds: number): string {
   return new Date(seconds * 1000).toISOString()
@@ -192,17 +192,78 @@ function toUiMessages(item: ThreadItem): UiMessage[] {
   }
 
   if (item.type === 'dynamicToolCall' || item.type === 'mcpToolCall') {
+    const toolCall = normalizeToolCall(item)
     return [
       {
         id: item.id,
         role: 'system',
         text: toolMessageText(item),
         messageType: 'toolCall',
+        toolCall,
       },
     ]
   }
 
   return []
+}
+
+function normalizeToolCall(item: ThreadItem): ToolCallData {
+  const raw = item as Record<string, unknown>
+  const kind = item.type === 'mcpToolCall' ? 'mcp' : 'dynamic'
+  const tool = typeof raw.tool === 'string' ? raw.tool : '(tool)'
+  const server = typeof raw.server === 'string' ? raw.server : null
+  const status = normalizeToolStatus(raw.status)
+  const argumentsText = stringifyToolPayload(raw.arguments)
+
+  if (kind === 'mcp') {
+    const result = stringifyToolPayload(raw.result)
+    const error = stringifyToolPayload(raw.error)
+    return {
+      kind,
+      tool,
+      server,
+      status,
+      argumentsText,
+      outputText: result || error,
+    }
+  }
+
+  const contentItems = Array.isArray(raw.contentItems) ? raw.contentItems : []
+  return {
+    kind,
+    tool,
+    server,
+    status,
+    argumentsText,
+    outputText: stringifyDynamicToolContent(contentItems),
+  }
+}
+
+function normalizeToolStatus(value: unknown): ToolCallData['status'] {
+  if (value === 'inProgress' || value === 'in_progress') return 'inProgress'
+  if (value === 'failed') return 'failed'
+  return 'completed'
+}
+
+function stringifyToolPayload(value: unknown): string {
+  if (value == null) return ''
+  if (typeof value === 'string') return value
+  try {
+    return JSON.stringify(value, null, 2)
+  } catch {
+    return String(value)
+  }
+}
+
+function stringifyDynamicToolContent(items: unknown[]): string {
+  const chunks = items.flatMap((entry) => {
+    if (!entry || typeof entry !== 'object') return []
+    const record = entry as Record<string, unknown>
+    if (record.type === 'inputText' && typeof record.text === 'string') return [record.text]
+    if (record.type === 'inputImage' && typeof record.imageUrl === 'string') return [`[image] ${record.imageUrl}`]
+    return []
+  })
+  return chunks.join('\n\n')
 }
 
 function normalizeCommandStatus(value: unknown): CommandExecutionData['status'] {

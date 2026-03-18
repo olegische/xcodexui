@@ -114,6 +114,26 @@
           </div>
         </div>
 
+        <div v-else-if="isToolExecutionMessage(message)" class="message-row" data-role="system">
+          <div class="message-stack" data-role="system">
+            <button
+              type="button"
+              class="cmd-row"
+              :class="[toolStatusClass(message), { 'cmd-expanded': isToolExpanded(message) }]"
+              @click="toggleToolExpand(message)"
+            >
+              <span class="cmd-chevron" :class="{ 'cmd-chevron-open': isToolExpanded(message) }">▶</span>
+              <code class="cmd-label">{{ toolLabel(message) }}</code>
+              <span class="cmd-status">{{ toolStatusLabel(message) }}</span>
+            </button>
+            <div class="cmd-output-wrap" :class="{ 'cmd-output-visible': isToolExpanded(message) }">
+              <div class="cmd-output-inner">
+                <pre class="cmd-output">{{ toolBody(message) }}</pre>
+              </div>
+            </div>
+          </div>
+        </div>
+
         <div v-else class="message-row" :data-role="message.role" :data-message-type="message.messageType || ''">
           <div class="message-stack" :data-role="message.role">
             <article class="message-body" :data-role="message.role">
@@ -266,6 +286,7 @@ import IconTablerArrowBackUp from '../icons/IconTablerArrowBackUp.vue'
 
 const expandedCommandIds = ref<Set<string>>(new Set())
 const collapsingCommandIds = ref<Set<string>>(new Set())
+const expandedToolIds = ref<Set<string>>(new Set())
 const expandedWorkedIds = ref<Set<string>>(new Set())
 const prevCommandStatuses = ref<Record<string, string>>({})
 
@@ -275,6 +296,10 @@ function isCommandMessage(message: UiMessage): boolean {
 
 function isToolCallMessage(message: UiMessage): boolean {
   return message.messageType === 'toolCall'
+}
+
+function isToolExecutionMessage(message: UiMessage): boolean {
+  return message.messageType === 'toolCall' && !!message.toolCall
 }
 
 function parseToolCallMessage(value: string): { verb: string; subject: string } {
@@ -287,6 +312,51 @@ function parseToolCallMessage(value: string): { verb: string; subject: string } 
     verb: match[1],
     subject: match[2],
   }
+}
+
+function isToolExpanded(message: UiMessage): boolean {
+  if (message.toolCall?.status === 'inProgress') return true
+  return expandedToolIds.value.has(message.id)
+}
+
+function toggleToolExpand(message: UiMessage): void {
+  if (!message.toolCall || message.toolCall.status === 'inProgress') return
+  const next = new Set(expandedToolIds.value)
+  if (next.has(message.id)) next.delete(message.id)
+  else next.add(message.id)
+  expandedToolIds.value = next
+}
+
+function toolLabel(message: UiMessage): string {
+  const tool = message.toolCall
+  if (!tool) return message.text
+  return tool.server ? `${tool.server}:${tool.tool}` : tool.tool
+}
+
+function toolStatusLabel(message: UiMessage): string {
+  const tool = message.toolCall
+  if (!tool) return ''
+  switch (tool.status) {
+    case 'inProgress': return '⟳ Running'
+    case 'failed': return '✗ Failed'
+    default: return '✓ Completed'
+  }
+}
+
+function toolStatusClass(message: UiMessage): string {
+  const status = message.toolCall?.status
+  if (status === 'inProgress') return 'cmd-status-running'
+  if (status === 'failed') return 'cmd-status-error'
+  return 'cmd-status-ok'
+}
+
+function toolBody(message: UiMessage): string {
+  const tool = message.toolCall
+  if (!tool) return message.text || '(no output)'
+  const sections: string[] = []
+  if (tool.argumentsText.trim().length > 0) sections.push(`Arguments\n${tool.argumentsText}`)
+  if (tool.outputText.trim().length > 0) sections.push(`Output\n${tool.outputText}`)
+  return sections.join('\n\n') || message.text || '(no output)'
 }
 
 function isCommandExpanded(message: UiMessage): boolean {

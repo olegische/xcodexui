@@ -1,7 +1,8 @@
 import type { Ref } from 'vue'
 import { persistThreadTitle, resumeThread, rollbackThreadRaw, startThreadTurnRaw, type RpcNotification } from '../../api/codexGateway'
 import { normalizeThreadMessagesV2 } from '../../api/normalizers/v2'
-import { omitKey } from './message-helpers'
+import { areFileAttachmentsEqual, omitKey } from './message-helpers'
+import { areStringArraysEqual } from './thread-groups'
 import {
   extractThreadIdFromNotification,
   isAgentContentEvent,
@@ -25,6 +26,26 @@ import {
   readTurnErrorMessage,
   readTurnStartedInfo,
 } from './notification-parsers'
+
+function hasMatchingPersistedUserMessage(
+  transcript: Array<{
+    role?: string
+    text?: string
+    images?: string[]
+    fileAttachments?: Array<{ label: string; path: string }>
+  }>,
+  pending: {
+    text: string
+    imageUrls: string[]
+    fileAttachments: Array<{ label: string; path: string }>
+  },
+): boolean {
+  const latestPersistedUserMessage = [...transcript].reverse().find((message) => message.role === 'user')
+  if (!latestPersistedUserMessage) return false
+  return latestPersistedUserMessage.text === pending.text
+    && areStringArraysEqual(latestPersistedUserMessage.images, pending.imageUrls)
+    && areFileAttachmentsEqual(latestPersistedUserMessage.fileAttachments, pending.fileAttachments)
+}
 
 export function createThreadRealtime(params: {
   selectedThreadId: Ref<string>
@@ -286,7 +307,21 @@ export function createThreadRealtime(params: {
       clearActiveLiveTextSegment(notificationThreadId)
       const completedTurnId = completedTurn?.turnId || readString(asRecord(asRecord(notification.params)?.turn)?.id) || getLedgerThreadState(notificationThreadId).activeTurnId || `${notificationThreadId}:unknown`
       const pending = pendingTurnRequestByThreadId.value[notificationThreadId]
+      const shouldIncludePendingUserMessage = pending
+        ? !hasMatchingPersistedUserMessage(
+            getLedgerThreadState(notificationThreadId).confirmedTranscript,
+            {
+              text: pending.text,
+              imageUrls: pending.imageUrls,
+              fileAttachments: pending.fileAttachments.map((file: { label: string; path: string }) => ({
+                label: file.label,
+                path: file.path,
+              })),
+            },
+          )
+        : false
       const pendingUserMessage = pending
+        && shouldIncludePendingUserMessage
         ? {
             id: `pending-user:${notificationThreadId}`,
             role: 'user' as const,
