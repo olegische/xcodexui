@@ -97,7 +97,7 @@ export function areTurnActivitiesEqual(first?: TurnActivityState, second?: TurnA
 }
 
 export function buildTurnSummaryMessage(summary: TurnSummaryState): UiMessage {
-  return { id: `turn-summary:${summary.turnId}`, role: 'system', text: `Worked for ${formatTurnDuration(summary.durationMs)}`, messageType: 'turnSummary' }
+  return { id: `turn-summary:${summary.turnId}`, role: 'system', text: `Worked for ${formatTurnDuration(summary.durationMs)}`, messageType: 'worked' }
 }
 
 export function findLastAssistantMessageIndex(messages: UiMessage[]): number {
@@ -151,7 +151,7 @@ export function projectLiveTurnEvents(events: LiveTurnEvent[]): UiMessage[] {
 }
 
 export function isWorkedMessage(message: UiMessage): boolean {
-  return message.messageType === 'turnSummary'
+  return message.messageType === 'worked'
 }
 
 export function shouldPreserveFinalizedSnapshot(
