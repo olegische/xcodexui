@@ -433,7 +433,7 @@ export function useDesktopState() {
     if (!pending) return null
 
     const ledger = getLedgerThreadState(threadId)
-    const persisted = ledger.confirmedTranscript
+    const persisted = ledger.finalizedSnapshot?.messages ?? ledger.confirmedTranscript
     const liveMessages = projectLiveTurnEvents(ledger.liveEventLog)
     const latestPersistedUserMessage = [...persisted].reverse().find((message) => message.role === 'user')
 
