@@ -5,9 +5,7 @@ import {
   getAvailableModelIds,
   getCurrentModelConfig,
   getPendingServerRequests,
-  getSkillsList,
   interruptThreadTurnRaw,
-  readThreadRaw,
   replyToServerRequest,
   rollbackThreadRaw,
   getThreadGroups,
@@ -24,7 +22,7 @@ import {
   type RpcNotification,
   type SkillInfo,
 } from '../../api/codexGateway'
-import { normalizeThreadMessagesV2, readThreadInProgressFromResponse } from '../../api/normalizers/v2'
+import { normalizeThreadMessagesV2 } from '../../api/normalizers/v2'
 import { IS_WASM_RUNTIME } from '../../config/runtime'
 import type {
   CommandExecutionData,
@@ -57,14 +55,10 @@ import {
 import {
   flattenThreads as flattenThreadsHelper,
   areStringArraysEqual as areStringArraysEqualHelper,
-  mergeIncomingWithLocalInProgressThreads as mergeIncomingWithLocalInProgressThreadsHelper,
   mergeProjectOrder as mergeProjectOrderHelper,
   mergeThreadGroups as mergeThreadGroupsHelper,
   orderGroupsByProjectOrder as orderGroupsByProjectOrderHelper,
-  pruneThreadStateMap as pruneThreadStateMapHelper,
   reorderStringArray as reorderStringArrayHelper,
-  toOptimisticThreadTitle as toOptimisticThreadTitleHelper,
-  toProjectName as toProjectNameHelper,
   toProjectNameFromWorkspaceRoot as toProjectNameFromWorkspaceRootHelper,
 } from './thread-groups'
 import {
@@ -83,6 +77,9 @@ import {
   saveThreadScrollStateMap as saveThreadScrollStateMapHelper,
 } from './storage'
 import { createDesktopLedger } from './ledger'
+import { createThreadListState } from './thread-list-state'
+import { createThreadRuntimeState } from './thread-runtime-state'
+import { createThreadSync } from './thread-sync'
 import {
   extractThreadIdFromNotification,
   isAgentContentEvent,
@@ -325,11 +322,7 @@ const projectLiveTurnEvents = projectLiveTurnEventsHelper
 const shouldPreserveFinalizedSnapshot = shouldPreserveFinalizedSnapshotHelper
 const omitKey = omitKeyHelper
 const mergeThreadGroups = mergeThreadGroupsHelper
-const mergeIncomingWithLocalInProgressThreads = mergeIncomingWithLocalInProgressThreadsHelper
-const pruneThreadStateMap = pruneThreadStateMapHelper
-const toProjectName = toProjectNameHelper
 const toProjectNameFromWorkspaceRoot = toProjectNameFromWorkspaceRootHelper
-const toOptimisticThreadTitle = toOptimisticThreadTitleHelper
 
 function asRecord(value: unknown): Record<string, unknown> | null {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
@@ -641,231 +634,35 @@ export function useDesktopState() {
     }
   }
 
-  function applyCachedTitlesToGroups(groups: UiProjectGroup[]): UiProjectGroup[] {
-    const titles = threadTitleById.value
-    if (Object.keys(titles).length === 0) return groups
-    return groups.map((group) => ({
-      projectName: group.projectName,
-      threads: group.threads.map((thread) => {
-        const cached = titles[thread.id]
-        return cached ? { ...thread, title: cached } : thread
-      }),
-    }))
-  }
+  let applyThreadFlags = (): void => {}
 
-  function applyThreadFlags(): void {
-    const withTitles = applyCachedTitlesToGroups(sourceGroups.value)
-    const flaggedGroups: UiProjectGroup[] = withTitles.map((group) => ({
-      projectName: group.projectName,
-      threads: group.threads.map((thread) => {
-        const inProgress = isThreadInProgress(thread.id)
-        const isSelected = selectedThreadId.value === thread.id
-        const lastReadIso = readStateByThreadId.value[thread.id]
-        const unreadByEvent = eventUnreadByThreadId.value[thread.id] === true
-        const unread = !isSelected && !inProgress && (unreadByEvent || lastReadIso !== thread.updatedAtIso)
-
-        return {
-          ...thread,
-          inProgress,
-          unread,
-        }
-      }),
-    }))
-    projectGroups.value = mergeThreadGroups(projectGroups.value, flaggedGroups)
-  }
-
-  function insertOptimisticThread(threadId: string, cwd: string, firstMessageText: string): void {
-    const nowIso = new Date().toISOString()
-    const normalizedCwd = cwd.trim()
-    const projectName = toProjectName(normalizedCwd)
-    const nextThread: UiThread = {
-      id: threadId,
-      title: toOptimisticThreadTitle(firstMessageText),
-      projectName,
-      cwd: normalizedCwd,
-      hasWorktree: normalizedCwd.includes('/.codex/worktrees/') || normalizedCwd.includes('/.git/worktrees/'),
-      createdAtIso: nowIso,
-      updatedAtIso: nowIso,
-      preview: firstMessageText,
-      unread: false,
-      inProgress: false,
-    }
-
-    const existingGroupIndex = sourceGroups.value.findIndex((group) => group.projectName === projectName)
-    if (existingGroupIndex >= 0) {
-      const existingGroup = sourceGroups.value[existingGroupIndex]
-      const remainingThreads = existingGroup.threads.filter((thread) => thread.id !== threadId)
-      const nextGroup: UiProjectGroup = {
-        projectName,
-        threads: [nextThread, ...remainingThreads],
-      }
-      const nextGroups = [...sourceGroups.value]
-      nextGroups.splice(existingGroupIndex, 1, nextGroup)
-      sourceGroups.value = nextGroups
-    } else {
-      sourceGroups.value = [{ projectName, threads: [nextThread] }, ...sourceGroups.value]
-    }
-
-    const nextProjectOrder = mergeProjectOrder(projectOrder.value, sourceGroups.value)
-    if (!areStringArraysEqual(projectOrder.value, nextProjectOrder)) {
-      projectOrder.value = nextProjectOrder
-      saveProjectOrder(projectOrder.value)
-    }
-    applyThreadFlags()
-  }
-
-  function pruneThreadScopedState(flatThreads: UiThread[]): void {
-    const activeThreadIds = new Set(flatThreads.map((thread) => thread.id))
-    const nextReadState = pruneThreadStateMap(readStateByThreadId.value, activeThreadIds)
-    if (nextReadState !== readStateByThreadId.value) {
-      readStateByThreadId.value = nextReadState
-      saveReadStateMap(nextReadState)
-    }
-    const nextScrollState = pruneThreadStateMap(scrollStateByThreadId.value, activeThreadIds)
-    if (nextScrollState !== scrollStateByThreadId.value) {
-      scrollStateByThreadId.value = nextScrollState
-      saveThreadScrollStateMap(nextScrollState)
-    }
-    loadedMessagesByThreadId.value = pruneThreadStateMap(loadedMessagesByThreadId.value, activeThreadIds)
-    loadedVersionByThreadId.value = pruneThreadStateMap(loadedVersionByThreadId.value, activeThreadIds)
-    resumedThreadById.value = pruneThreadStateMap(resumedThreadById.value, activeThreadIds)
-    ledgerByThreadId.value = pruneThreadStateMap(ledgerByThreadId.value, activeThreadIds)
-    turnSummaryByThreadId.value = pruneThreadStateMap(turnSummaryByThreadId.value, activeThreadIds)
-    turnActivityByThreadId.value = pruneThreadStateMap(turnActivityByThreadId.value, activeThreadIds)
-    turnErrorByThreadId.value = pruneThreadStateMap(turnErrorByThreadId.value, activeThreadIds)
-    eventUnreadByThreadId.value = pruneThreadStateMap(eventUnreadByThreadId.value, activeThreadIds)
-    const nextPending: Record<string, UiServerRequest[]> = {}
-    for (const [threadId, requests] of Object.entries(pendingServerRequestsByThreadId.value)) {
-      if (threadId === GLOBAL_SERVER_REQUEST_SCOPE || activeThreadIds.has(threadId)) {
-        nextPending[threadId] = requests
-      }
-    }
-    pendingServerRequestsByThreadId.value = nextPending
-  }
-
-  function markThreadAsRead(threadId: string): void {
-    const thread = flattenThreads(sourceGroups.value).find((row) => row.id === threadId)
-    if (!thread) return
-
-    readStateByThreadId.value = {
-      ...readStateByThreadId.value,
-      [threadId]: thread.updatedAtIso,
-    }
-    saveReadStateMap(readStateByThreadId.value)
-    if (eventUnreadByThreadId.value[threadId]) {
-      eventUnreadByThreadId.value = omitKey(eventUnreadByThreadId.value, threadId)
-    }
-    applyThreadFlags()
-  }
-
-  function setTurnSummaryForThread(threadId: string, summary: TurnSummaryState | null): void {
-    if (!threadId) return
-
-    const previous = turnSummaryByThreadId.value[threadId]
-    if (summary) {
-      if (areTurnSummariesEqual(previous, summary)) return
-      turnSummaryByThreadId.value = {
-        ...turnSummaryByThreadId.value,
-        [threadId]: summary,
-      }
-    } else {
-      if (previous) {
-        turnSummaryByThreadId.value = omitKey(turnSummaryByThreadId.value, threadId)
-      }
-    }
-  }
-
-  function markThreadUnreadByEvent(threadId: string): void {
-    if (!threadId) return
-    if (threadId === selectedThreadId.value) return
-    if (eventUnreadByThreadId.value[threadId] === true) return
-    eventUnreadByThreadId.value = {
-      ...eventUnreadByThreadId.value,
-      [threadId]: true,
-    }
-    applyThreadFlags()
-  }
-
-  function setTurnActivityForThread(threadId: string, activity: TurnActivityState | null): void {
-    if (!threadId) return
-
-    const previous = turnActivityByThreadId.value[threadId]
-    if (!activity) {
-      if (previous) {
-        turnActivityByThreadId.value = omitKey(turnActivityByThreadId.value, threadId)
-      }
-      return
-    }
-
-    const normalizedLabel = sanitizeDisplayText(activity.label) || 'Thinking'
-    const incomingDetails = activity.details
-      .map((line) => sanitizeDisplayText(line))
-      .filter((line) => line.length > 0 && line !== normalizedLabel)
-    const mergedDetails = Array.from(new Set([...(previous?.details ?? []), ...incomingDetails])).slice(-3)
-    const nextActivity: TurnActivityState = {
-      label: normalizedLabel,
-      details: mergedDetails,
-    }
-
-    if (areTurnActivitiesEqual(previous, nextActivity)) return
-    turnActivityByThreadId.value = {
-      ...turnActivityByThreadId.value,
-      [threadId]: nextActivity,
-    }
-  }
-
-  function setTurnErrorForThread(threadId: string, message: string | null): void {
-    if (!threadId) return
-
-    const previous = turnErrorByThreadId.value[threadId]
-    const normalizedMessage = message ? normalizeMessageText(message) : ''
-    if (!normalizedMessage) {
-      if (previous) {
-        turnErrorByThreadId.value = omitKey(turnErrorByThreadId.value, threadId)
-      }
-      return
-    }
-
-    if (previous?.message === normalizedMessage) return
-
-    turnErrorByThreadId.value = {
-      ...turnErrorByThreadId.value,
-      [threadId]: { message: normalizedMessage },
-    }
-  }
-
-  function currentThreadVersion(threadId: string): string {
-    const thread = flattenThreads(sourceGroups.value).find((row) => row.id === threadId)
-    return thread?.updatedAtIso ?? ''
-  }
-
-  function setThreadScrollState(threadId: string, nextState: ThreadScrollState): void {
-    if (!threadId) return
-
-    const normalizedState: ThreadScrollState = {
-      scrollTop: Math.max(0, nextState.scrollTop),
-      isAtBottom: nextState.isAtBottom === true,
-    }
-    if (typeof nextState.scrollRatio === 'number' && Number.isFinite(nextState.scrollRatio)) {
-      normalizedState.scrollRatio = clamp(nextState.scrollRatio, 0, 1)
-    }
-
-    const previousState = scrollStateByThreadId.value[threadId]
-    if (
-      previousState &&
-      previousState.scrollTop === normalizedState.scrollTop &&
-      previousState.isAtBottom === normalizedState.isAtBottom &&
-      previousState.scrollRatio === normalizedState.scrollRatio
-    ) {
-      return
-    }
-
-    scrollStateByThreadId.value = {
-      ...scrollStateByThreadId.value,
-      [threadId]: normalizedState,
-    }
-    saveThreadScrollStateMap(scrollStateByThreadId.value)
-  }
+  const {
+    markThreadAsRead,
+    setTurnSummaryForThread,
+    markThreadUnreadByEvent,
+    setTurnActivityForThread,
+    setTurnErrorForThread,
+    currentThreadVersion,
+    setThreadScrollState,
+    upsertPendingServerRequest,
+    removePendingServerRequestById,
+    handleServerRequestNotification,
+  } = createThreadRuntimeState({
+    selectedThreadId,
+    readStateByThreadId,
+    scrollStateByThreadId,
+    turnSummaryByThreadId,
+    turnActivityByThreadId,
+    turnErrorByThreadId,
+    eventUnreadByThreadId,
+    pendingServerRequestsByThreadId,
+    globalServerRequestScope: GLOBAL_SERVER_REQUEST_SCOPE,
+    clamp,
+    saveReadStateMap,
+    saveThreadScrollStateMap,
+    applyThreadFlags,
+    getSourceThreads: () => flattenThreads(sourceGroups.value),
+  })
 
   const {
     getLedgerThreadState,
@@ -881,55 +678,100 @@ export function useDesktopState() {
     appendLiveEvent,
   } = createDesktopLedger({
     ledgerByThreadId,
-    onPhaseChange: applyThreadFlags,
+    onPhaseChange: () => applyThreadFlags(),
   })
 
-  function upsertPendingServerRequest(request: UiServerRequest): void {
-    const threadId = request.threadId || GLOBAL_SERVER_REQUEST_SCOPE
-    const current = pendingServerRequestsByThreadId.value[threadId] ?? []
-    const index = current.findIndex((row) => row.id === request.id)
-    const nextRows = [...current]
-    if (index >= 0) {
-      nextRows.splice(index, 1, request)
-    } else {
-      nextRows.push(request)
-    }
-
-    pendingServerRequestsByThreadId.value = {
-      ...pendingServerRequestsByThreadId.value,
-      [threadId]: nextRows.sort((first, second) => first.receivedAtIso.localeCompare(second.receivedAtIso)),
-    }
+  const threadListState = createThreadListState({
+    sourceGroups,
+    projectGroups,
+    projectOrder,
+    selectedThreadId,
+    readStateByThreadId,
+    scrollStateByThreadId,
+    loadedMessagesByThreadId,
+    loadedVersionByThreadId,
+    resumedThreadById,
+    ledgerByThreadId,
+    turnSummaryByThreadId,
+    turnActivityByThreadId,
+    turnErrorByThreadId,
+    eventUnreadByThreadId,
+    pendingServerRequestsByThreadId,
+    globalServerRequestScope: GLOBAL_SERVER_REQUEST_SCOPE,
+    threadTitleById,
+    hasLoadedThreads,
+    isLoadingThreads,
+    isThreadInProgress,
+    setSelectedThreadId,
+    saveProjectOrder,
+    saveReadStateMap,
+    saveThreadScrollStateMap,
+    hydrateWorkspaceRootsStateIfNeeded,
+    getThreadGroups,
+    loadThreadTitleCacheIfNeeded,
+  })
+  applyThreadFlags = threadListState.applyThreadFlags
+  const { insertOptimisticThread, loadThreads, pruneThreadScopedState } = threadListState
+  const eventSyncTimerRef = {
+    get value() {
+      return eventSyncTimer
+    },
+    set value(nextValue: number | null) {
+      eventSyncTimer = nextValue
+    },
   }
-
-  function removePendingServerRequestById(requestId: number): void {
-    const next: Record<string, UiServerRequest[]> = {}
-    for (const [threadId, requests] of Object.entries(pendingServerRequestsByThreadId.value)) {
-      const filtered = requests.filter((request) => request.id !== requestId)
-      if (filtered.length > 0) {
-        next[threadId] = filtered
-      }
-    }
-    pendingServerRequestsByThreadId.value = next
+  const pendingThreadsRefreshRef = {
+    get value() {
+      return pendingThreadsRefresh
+    },
+    set value(nextValue: boolean) {
+      pendingThreadsRefresh = nextValue
+    },
   }
-
-  function handleServerRequestNotification(notification: RpcNotification): boolean {
-    if (notification.method === 'server/request') {
-      const request = normalizeServerRequest(notification.params, GLOBAL_SERVER_REQUEST_SCOPE)
-      if (!request) return true
-      upsertPendingServerRequest(request)
-      return true
-    }
-
-    if (notification.method === 'server/request/resolved') {
-      const id = readResolvedServerRequestId(notification)
-      if (id !== null) {
-        removePendingServerRequestById(id)
-      }
-      return true
-    }
-
-    return false
+  const pendingThreadMessageRefreshRef = {
+    get value() {
+      return pendingThreadMessageRefresh
+    },
   }
+  const {
+    loadMessages,
+    refreshSkills,
+    refreshAll,
+    selectThread,
+    syncThreadStatus,
+    syncFromNotifications,
+  } = createThreadSync({
+    sourceGroups,
+    selectedThreadId,
+    error,
+    isLoadingMessages,
+    loadedMessagesByThreadId,
+    resumedThreadById,
+    loadedVersionByThreadId,
+    installedSkills,
+    isPolling,
+    pendingThreadsRefreshRef,
+    pendingThreadMessageRefreshRef,
+    eventSyncTimerRef,
+    eventSyncDebounceMs: EVENT_SYNC_DEBOUNCE_MS,
+    isThreadInProgress,
+    currentThreadVersion,
+    markThreadAsRead,
+    setConfirmedTranscriptForThread: (threadId, messages, options) => {
+      setConfirmedTranscriptForThread(threadId, messages, {
+        inProgress: options?.inProgress ?? false,
+        preserveMissing: options?.preserveMissing,
+      })
+    },
+    clearLiveLedger,
+    setFinalizedTurnSnapshotForThread: (threadId, snapshot) => {
+      setFinalizedTurnSnapshotForThread(threadId, snapshot as FinalizedTurnSnapshotState | null)
+    },
+    loadThreads,
+    refreshModelPreferences,
+    setSelectedThreadId,
+  })
+
   function applyRealtimeUpdates(notification: RpcNotification): void {
     if (handleServerRequestNotification(notification)) {
       return
@@ -1270,135 +1112,6 @@ export function useDesktopState() {
       void persistThreadTitle(threadId, title)
     } catch {
       // Title generation is best-effort.
-    }
-  }
-
-  async function loadThreads() {
-    if (!hasLoadedThreads.value) {
-      isLoadingThreads.value = true
-    }
-
-    try {
-      const [groups] = await Promise.all([getThreadGroups(), loadThreadTitleCacheIfNeeded()])
-      await hydrateWorkspaceRootsStateIfNeeded(groups)
-
-      const nextProjectOrder = mergeProjectOrder(projectOrder.value, groups)
-      if (!areStringArraysEqual(projectOrder.value, nextProjectOrder)) {
-        projectOrder.value = nextProjectOrder
-        saveProjectOrder(projectOrder.value)
-      }
-
-      const orderedGroups = orderGroupsByProjectOrder(groups, projectOrder.value)
-      const mergedWithInProgress = mergeIncomingWithLocalInProgressThreads(
-        sourceGroups.value,
-        orderedGroups,
-        isThreadInProgress,
-      )
-      sourceGroups.value = mergeThreadGroups(sourceGroups.value, mergedWithInProgress)
-      applyThreadFlags()
-      hasLoadedThreads.value = true
-
-      const flatThreads = flattenThreads(projectGroups.value)
-      pruneThreadScopedState(flatThreads)
-
-      const currentExists = flatThreads.some((thread) => thread.id === selectedThreadId.value)
-
-      if (!currentExists) {
-        setSelectedThreadId(flatThreads[0]?.id ?? '')
-      }
-    } finally {
-      isLoadingThreads.value = false
-    }
-  }
-
-  async function loadMessages(threadId: string, options: { silent?: boolean } = {}) {
-    if (!threadId) {
-      return
-    }
-
-    const alreadyLoaded = loadedMessagesByThreadId.value[threadId] === true
-    const shouldShowLoading = options.silent !== true && !alreadyLoaded
-    if (shouldShowLoading) {
-      isLoadingMessages.value = true
-    }
-
-    try {
-      if (resumedThreadById.value[threadId] !== true) {
-        await resumeThread(threadId)
-        resumedThreadById.value = {
-          ...resumedThreadById.value,
-          [threadId]: true,
-        }
-      }
-
-      const payload = await readThreadRaw(threadId)
-      const nextMessages = normalizeThreadMessagesV2(payload)
-      const inProgress = readThreadInProgressFromResponse(payload)
-      setConfirmedTranscriptForThread(threadId, nextMessages, {
-        inProgress,
-        preserveMissing: options.silent === true,
-      })
-
-      if (!inProgress) {
-        clearLiveLedger(threadId)
-        setFinalizedTurnSnapshotForThread(threadId, null)
-      }
-
-      loadedMessagesByThreadId.value = {
-        ...loadedMessagesByThreadId.value,
-        [threadId]: true,
-      }
-
-      const version = currentThreadVersion(threadId)
-      if (version) {
-        loadedVersionByThreadId.value = {
-          ...loadedVersionByThreadId.value,
-          [threadId]: version,
-        }
-      }
-      markThreadAsRead(threadId)
-    } finally {
-      if (shouldShowLoading) {
-        isLoadingMessages.value = false
-      }
-    }
-  }
-
-  async function refreshSkills(): Promise<void> {
-    if (IS_WASM_RUNTIME) {
-      installedSkills.value = []
-      return
-    }
-    try {
-      const cwds = sourceGroups.value.flatMap((g) => g.threads.map((t) => t.cwd)).filter(Boolean)
-      installedSkills.value = await getSkillsList(cwds.length > 0 ? [...new Set(cwds)] : undefined)
-    } catch {
-      // keep previous skills on failure
-    }
-  }
-
-  async function refreshAll() {
-    error.value = ''
-
-    try {
-      await loadThreads()
-      await Promise.all([
-        refreshModelPreferences(),
-        refreshSkills(),
-      ])
-      await loadMessages(selectedThreadId.value)
-    } catch (unknownError) {
-      error.value = unknownError instanceof Error ? unknownError.message : 'Unknown application error'
-    }
-  }
-
-  async function selectThread(threadId: string) {
-    setSelectedThreadId(threadId)
-
-    try {
-      await loadMessages(threadId)
-    } catch (unknownError) {
-      error.value = unknownError instanceof Error ? unknownError.message : 'Unknown application error'
     }
   }
 
@@ -1884,84 +1597,6 @@ export function useDesktopState() {
       })
     } catch {
       // Keep local project order when global state persistence is unavailable.
-    }
-  }
-
-  async function syncThreadStatus(): Promise<void> {
-    if (isPolling.value) return
-    isPolling.value = true
-
-    try {
-      await loadThreads()
-
-      if (!selectedThreadId.value) return
-
-      const threadId = selectedThreadId.value
-      const currentVersion = currentThreadVersion(threadId)
-      const loadedVersion = loadedVersionByThreadId.value[threadId] ?? ''
-      const hasVersionChange = currentVersion.length > 0 && currentVersion !== loadedVersion
-      const isInProgress = isThreadInProgress(threadId)
-
-      if (isInProgress || hasVersionChange) {
-        await loadMessages(threadId, { silent: true })
-      }
-    } catch {
-      // ignore poll failures and keep last known state
-    } finally {
-      isPolling.value = false
-    }
-  }
-
-  async function syncFromNotifications(): Promise<void> {
-    if (isPolling.value) {
-      if (typeof window !== 'undefined' && eventSyncTimer === null) {
-        eventSyncTimer = window.setTimeout(() => {
-          eventSyncTimer = null
-          void syncFromNotifications()
-        }, EVENT_SYNC_DEBOUNCE_MS)
-      }
-      return
-    }
-
-    isPolling.value = true
-
-    const shouldRefreshThreads = pendingThreadsRefresh
-    const threadIdsToRefresh = new Set(pendingThreadMessageRefresh)
-    pendingThreadsRefresh = false
-    pendingThreadMessageRefresh.clear()
-
-    try {
-      if (shouldRefreshThreads) {
-        await loadThreads()
-      }
-
-      const activeThreadId = selectedThreadId.value
-      if (!activeThreadId) return
-
-      const isActiveDirty = threadIdsToRefresh.has(activeThreadId)
-      const isInProgress = isThreadInProgress(activeThreadId)
-      const currentVersion = currentThreadVersion(activeThreadId)
-      const loadedVersion = loadedVersionByThreadId.value[activeThreadId] ?? ''
-      const hasVersionChange = currentVersion.length > 0 && currentVersion !== loadedVersion
-
-      if (isActiveDirty || isInProgress || hasVersionChange || shouldRefreshThreads) {
-        await loadMessages(activeThreadId, { silent: true })
-      }
-    } catch {
-      // Keep UI stable on transient event sync failures.
-    } finally {
-      isPolling.value = false
-
-      if (
-        (pendingThreadsRefresh || pendingThreadMessageRefresh.size > 0) &&
-        typeof window !== 'undefined' &&
-        eventSyncTimer === null
-      ) {
-        eventSyncTimer = window.setTimeout(() => {
-          eventSyncTimer = null
-          void syncFromNotifications()
-        }, EVENT_SYNC_DEBOUNCE_MS)
-      }
     }
   }
 
