@@ -2,7 +2,8 @@ import type { Ref } from 'vue'
 import { getSkillsList, readThreadRaw, resumeThread } from '../../api/codexGateway'
 import { normalizeThreadMessagesV2, readThreadInProgressFromResponse } from '../../api/normalizers/v2'
 import { IS_WASM_RUNTIME } from '../../config/runtime'
-import type { UiProjectGroup, UiMessage } from '../../types/codex'
+import type { UiFileAttachment, UiProjectGroup, UiMessage } from '../../types/codex'
+import type { FinalizedTurnSnapshotState, PendingTurnRequest } from './types'
 
 export function createThreadSync(params: {
   sourceGroups: Ref<UiProjectGroup[]>
@@ -19,8 +20,10 @@ export function createThreadSync(params: {
   eventSyncTimerRef: { value: number | null }
   eventSyncDebounceMs: number
   isThreadInProgress: (threadId: string) => boolean
+  getLedgerThreadState: (threadId: string) => { activeTurnId: string }
   currentThreadVersion: (threadId: string) => string
   markThreadAsRead: (threadId: string) => void
+  pendingTurnRequestByThreadId: Ref<Record<string, PendingTurnRequest>>
   setConfirmedTranscriptForThread: (
     threadId: string,
     messages: UiMessage[],
@@ -28,6 +31,7 @@ export function createThreadSync(params: {
   ) => void
   clearPendingTurnRequest: (threadId: string) => void
   clearLiveLedger: (threadId: string) => void
+  setFinalizedTurnSnapshotForThread: (threadId: string, snapshot: FinalizedTurnSnapshotState | null, options?: { forceClear?: boolean }) => void
   loadThreads: () => Promise<void>
   refreshModelPreferences: () => Promise<void>
   setSelectedThreadId: (threadId: string) => void
@@ -47,15 +51,35 @@ export function createThreadSync(params: {
     eventSyncTimerRef,
     eventSyncDebounceMs,
     isThreadInProgress,
+    getLedgerThreadState,
     currentThreadVersion,
     markThreadAsRead,
+    pendingTurnRequestByThreadId,
     setConfirmedTranscriptForThread,
     clearPendingTurnRequest,
     clearLiveLedger,
+    setFinalizedTurnSnapshotForThread,
     loadThreads,
     refreshModelPreferences,
     setSelectedThreadId,
   } = params
+
+  function matchesPendingUserMessage(messages: UiMessage[], pending: PendingTurnRequest | undefined): boolean {
+    if (!pending) return false
+    const latestPersistedUserMessage = [...messages].reverse().find((message) => message.role === 'user')
+    if (!latestPersistedUserMessage) return false
+
+    const pendingAttachments: UiFileAttachment[] = pending.fileAttachments.map((file) => ({
+      label: file.label,
+      path: file.path,
+    }))
+    const persistedAttachments = latestPersistedUserMessage.fileAttachments ?? []
+    if (persistedAttachments.length !== pendingAttachments.length) return false
+
+    return latestPersistedUserMessage.text === pending.text
+      && JSON.stringify(latestPersistedUserMessage.images ?? []) === JSON.stringify(pending.imageUrls)
+      && JSON.stringify(persistedAttachments) === JSON.stringify(pendingAttachments)
+  }
 
   async function loadMessages(threadId: string, options: { silent?: boolean } = {}): Promise<void> {
     if (!threadId) return
@@ -70,10 +94,22 @@ export function createThreadSync(params: {
       const payload = await readThreadRaw(threadId)
       const nextMessages = normalizeThreadMessagesV2(payload)
       const inProgress = readThreadInProgressFromResponse(payload)
-      setConfirmedTranscriptForThread(threadId, nextMessages, { inProgress, preserveMissing: options.silent === true })
-      if (!inProgress) {
+      const pending = pendingTurnRequestByThreadId.value[threadId]
+      const hasCanonicalPendingUser = matchesPendingUserMessage(nextMessages, pending)
+      const hasLedgerActiveTurn = getLedgerThreadState(threadId).activeTurnId.trim().length > 0
+      const shouldTreatAsInProgress = inProgress
+        || (IS_WASM_RUNTIME && hasLedgerActiveTurn)
+        || (IS_WASM_RUNTIME && Boolean(pending) && !hasCanonicalPendingUser)
+
+      setConfirmedTranscriptForThread(threadId, nextMessages, {
+        inProgress: shouldTreatAsInProgress,
+        preserveMissing: options.silent === true,
+      })
+
+      if (!shouldTreatAsInProgress) {
         clearPendingTurnRequest(threadId)
         clearLiveLedger(threadId)
+        setFinalizedTurnSnapshotForThread(threadId, null)
       }
       loadedMessagesByThreadId.value = { ...loadedMessagesByThreadId.value, [threadId]: true }
       const version = currentThreadVersion(threadId)

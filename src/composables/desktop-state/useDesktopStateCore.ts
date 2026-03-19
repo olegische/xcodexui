@@ -364,6 +364,7 @@ export function useDesktopState() {
   const turnActivityByThreadId = ref<Record<string, TurnActivityState>>({})
   const turnErrorByThreadId = ref<Record<string, TurnErrorState>>({})
   const pendingServerRequestsByThreadId = ref<Record<string, UiServerRequest[]>>({})
+  const activeTurnIdByThreadId = ref<Record<string, string>>({})
   const pendingTurnRequestByThreadId = ref<Record<string, PendingTurnRequest>>({})
 
   const threadTitleById = ref<Record<string, string>>({})
@@ -433,7 +434,7 @@ export function useDesktopState() {
     if (!pending) return null
 
     const ledger = getLedgerThreadState(threadId)
-    const persisted = ledger.confirmedTranscript
+    const persisted = ledger.finalizedSnapshot?.messages ?? ledger.confirmedTranscript
     const liveMessages = projectLiveTurnEvents(ledger.liveEventLog)
     const latestPersistedUserMessage = [...persisted].reverse().find((message) => message.role === 'user')
 
@@ -451,8 +452,8 @@ export function useDesktopState() {
       return null
     }
 
-    const hasCurrentTurnLiveArtifacts = liveMessages.length > 0
-    if (!hasCurrentTurnLiveArtifacts && !isThreadInProgress(threadId)) {
+    const hasCurrentTurnArtifacts = liveMessages.length > 0 || Boolean(ledger.finalizedSnapshot)
+    if (!hasCurrentTurnArtifacts && !isThreadInProgress(threadId)) {
       return null
     }
 
@@ -472,7 +473,7 @@ export function useDesktopState() {
     const ledger = getLedgerThreadState(threadId)
     const pendingUserMessage = selectedPendingUserMessage.value
     const liveMessages = projectLiveTurnEvents(ledger.liveEventLog)
-    const baseMessages = ledger.confirmedTranscript
+    const baseMessages = ledger.finalizedSnapshot?.messages ?? ledger.confirmedTranscript
     const combined = pendingUserMessage
       ? [...baseMessages, pendingUserMessage, ...liveMessages]
       : [...baseMessages, ...liveMessages]
@@ -571,6 +572,8 @@ export function useDesktopState() {
     isThreadInProgress,
     updateLedgerThreadState,
     setConfirmedTranscriptForThread,
+    setFinalizedTurnSnapshotForThread,
+    buildFinalizedTurnSnapshot,
     clearActiveLiveTextSegment,
     appendLiveTextSegment,
     hasLiveTextSegmentsForItem,
@@ -673,8 +676,10 @@ export function useDesktopState() {
     eventSyncTimerRef,
     eventSyncDebounceMs: EVENT_SYNC_DEBOUNCE_MS,
     isThreadInProgress,
+    getLedgerThreadState: (threadId) => getLedgerThreadState(threadId),
     currentThreadVersion,
     markThreadAsRead,
+    pendingTurnRequestByThreadId,
     setConfirmedTranscriptForThread: (threadId, messages, options) => {
       setConfirmedTranscriptForThread(threadId, messages, {
         inProgress: options?.inProgress ?? false,
@@ -683,6 +688,7 @@ export function useDesktopState() {
     },
     clearPendingTurnRequest,
     clearLiveLedger,
+    setFinalizedTurnSnapshotForThread,
     loadThreads,
     refreshModelPreferences,
     setSelectedThreadId,
@@ -717,9 +723,19 @@ export function useDesktopState() {
     pendingThreadMessageRefreshRef,
     modelFallbackId: MODEL_FALLBACK_ID,
     isThreadInProgress,
+    getActiveTurnId: (threadId) => activeTurnIdByThreadId.value[threadId] ?? '',
+    setActiveTurnId: (threadId, turnId) => {
+      activeTurnIdByThreadId.value = { ...activeTurnIdByThreadId.value, [threadId]: turnId }
+    },
+    clearActiveTurnId: (threadId) => {
+      const next = { ...activeTurnIdByThreadId.value }
+      delete next[threadId]
+      activeTurnIdByThreadId.value = next
+    },
     getLedgerThreadState,
     updateLedgerThreadState,
     clearLiveLedger,
+    setFinalizedTurnSnapshotForThread,
     clearActiveLiveTextSegment,
     setConfirmedTranscriptForThread,
     setTurnSummaryForThread,
@@ -779,9 +795,19 @@ export function useDesktopState() {
     setTurnErrorForThread,
     markThreadUnreadByEvent,
     setThreadScrollState,
+    setActiveTurnId: (threadId, turnId) => {
+      activeTurnIdByThreadId.value = { ...activeTurnIdByThreadId.value, [threadId]: turnId }
+    },
+    clearActiveTurnId: (threadId) => {
+      const next = { ...activeTurnIdByThreadId.value }
+      delete next[threadId]
+      activeTurnIdByThreadId.value = next
+    },
     getLedgerThreadState,
     updateLedgerThreadState,
     setConfirmedTranscriptForThread,
+    setFinalizedTurnSnapshotForThread,
+    buildFinalizedTurnSnapshot,
     clearActiveLiveTextSegment,
     appendLiveTextSegment,
     hasLiveTextSegmentsForItem,

@@ -9,7 +9,7 @@ import {
 import { normalizeThreadMessagesV2 } from '../../api/normalizers/v2'
 import type { ReasoningEffort, UiMessage } from '../../types/codex'
 import { omitKey } from './message-helpers'
-import type { FileAttachment, QueuedMessage } from './types'
+import type { FileAttachment, FinalizedTurnSnapshotState, QueuedMessage } from './types'
 
 export function createThreadTurnActions(params: {
   selectedThreadId: Ref<string>
@@ -26,9 +26,13 @@ export function createThreadTurnActions(params: {
   pendingThreadMessageRefreshRef: { value: Set<string> }
   modelFallbackId: string
   isThreadInProgress: (threadId: string) => boolean
+  getActiveTurnId: (threadId: string) => string
+  setActiveTurnId: (threadId: string, turnId: string) => void
+  clearActiveTurnId: (threadId: string) => void
   getLedgerThreadState: (threadId: string) => { activeTurnId: string; confirmedTranscript: UiMessage[] }
   updateLedgerThreadState: (threadId: string, updater: (current: any) => any) => void
   clearLiveLedger: (threadId: string) => void
+  setFinalizedTurnSnapshotForThread: (threadId: string, snapshot: FinalizedTurnSnapshotState | null, options?: { forceClear?: boolean }) => void
   clearActiveLiveTextSegment: (threadId: string) => void
   setConfirmedTranscriptForThread: (
     threadId: string,
@@ -70,9 +74,13 @@ export function createThreadTurnActions(params: {
     pendingThreadMessageRefreshRef,
     modelFallbackId,
     isThreadInProgress,
+    getActiveTurnId,
+    setActiveTurnId,
+    clearActiveTurnId,
     getLedgerThreadState,
     updateLedgerThreadState,
     clearLiveLedger,
+    setFinalizedTurnSnapshotForThread,
     clearActiveLiveTextSegment,
     setConfirmedTranscriptForThread,
     setTurnSummaryForThread,
@@ -113,11 +121,20 @@ export function createThreadTurnActions(params: {
     })
     if (resumedThreadById.value[threadId] !== true) await resumeThread(threadId)
     try {
-      await startThreadTurnRaw(threadId, buildProtocolTurnInput(nextText, imageUrls, skills, fileAttachments), {
+      const response = await startThreadTurnRaw(threadId, buildProtocolTurnInput(nextText, imageUrls, skills, fileAttachments), {
         model: modelId || undefined,
         effort: reasoningEffort || undefined,
         attachments: fileAttachments,
       })
+      const startedTurnId = response?.turn?.id?.trim?.() || ''
+      if (startedTurnId) {
+        setActiveTurnId(threadId, startedTurnId)
+        updateLedgerThreadState(threadId, (current) => ({
+          ...current,
+          phase: 'live',
+          activeTurnId: startedTurnId,
+        }))
+      }
     } catch (unknownError) {
       if (modelId && modelId !== modelFallbackId && isUnsupportedChatGptModelError(unknownError)) {
         await applyFallbackModelSelection()
@@ -129,11 +146,20 @@ export function createThreadTurnActions(params: {
           effort: reasoningEffort,
           fallbackRetried: true,
         })
-        await startThreadTurnRaw(threadId, buildProtocolTurnInput(nextText, imageUrls, skills, fileAttachments), {
+        const response = await startThreadTurnRaw(threadId, buildProtocolTurnInput(nextText, imageUrls, skills, fileAttachments), {
           model: modelFallbackId,
           effort: reasoningEffort || undefined,
           attachments: fileAttachments,
         })
+        const startedTurnId = response?.turn?.id?.trim?.() || ''
+        if (startedTurnId) {
+          setActiveTurnId(threadId, startedTurnId)
+          updateLedgerThreadState(threadId, (current) => ({
+            ...current,
+            phase: 'live',
+            activeTurnId: startedTurnId,
+          }))
+        }
       } else {
         throw unknownError
       }
@@ -172,6 +198,7 @@ export function createThreadTurnActions(params: {
       details: buildPendingTurnDetails(selectedModelId.value, selectedReasoningEffort.value),
     })
     setTurnErrorForThread(threadId, null)
+    setFinalizedTurnSnapshotForThread(threadId, null, { forceClear: true })
     updateLedgerThreadState(threadId, (current) => ({ ...current, phase: 'live' }))
     try {
       await startTurnForThread(threadId, nextText, imageUrls, skills, fileAttachments)
@@ -182,6 +209,7 @@ export function createThreadTurnActions(params: {
         phase: current.phase === 'failed' ? 'failed' : 'settled',
         activeTurnId: '',
       }))
+      clearActiveTurnId(threadId)
       setTurnActivityForThread(threadId, null)
       const errorMessage = unknownError instanceof Error ? unknownError.message : 'Unknown application error'
       setTurnErrorForThread(threadId, errorMessage)
@@ -228,6 +256,7 @@ export function createThreadTurnActions(params: {
         details: buildPendingTurnDetails(selectedModelId.value, selectedReasoningEffort.value),
       })
       setTurnErrorForThread(threadId, null)
+      setFinalizedTurnSnapshotForThread(threadId, null, { forceClear: true })
       updateLedgerThreadState(threadId, (current) => ({ ...current, phase: 'live' }))
       void startTurnForThread(threadId, nextText, imageUrls, skills, fileAttachments)
         .catch((unknownError) => {
@@ -237,6 +266,7 @@ export function createThreadTurnActions(params: {
             phase: current.phase === 'failed' ? 'failed' : 'settled',
             activeTurnId: '',
           }))
+          clearActiveTurnId(threadId)
           setTurnActivityForThread(threadId, null)
           const errorMessage = unknownError instanceof Error ? unknownError.message : 'Unknown application error'
           setTurnErrorForThread(threadId, errorMessage)
@@ -255,6 +285,7 @@ export function createThreadTurnActions(params: {
           phase: current.phase === 'failed' ? 'failed' : 'settled',
           activeTurnId: '',
         }))
+        clearActiveTurnId(threadId)
         setTurnActivityForThread(threadId, null)
         setTurnErrorForThread(threadId, unknownError instanceof Error ? unknownError.message : 'Unknown application error')
       }
@@ -289,6 +320,7 @@ export function createThreadTurnActions(params: {
         phase: current.phase === 'failed' ? 'failed' : 'settled',
         activeTurnId: '',
       }))
+      clearActiveTurnId(threadId)
       setTurnActivityForThread(threadId, null)
     } finally {
       isSendingMessage.value = false
@@ -298,7 +330,7 @@ export function createThreadTurnActions(params: {
   async function interruptSelectedThreadTurn(): Promise<void> {
     const threadId = selectedThreadId.value
     if (!threadId || !isThreadInProgress(threadId)) return
-    const turnId = getLedgerThreadState(threadId).activeTurnId
+    const turnId = getActiveTurnId(threadId) || getLedgerThreadState(threadId).activeTurnId
     isInterruptingTurn.value = true
     error.value = ''
     try {
@@ -309,6 +341,7 @@ export function createThreadTurnActions(params: {
         phase: current.phase === 'failed' ? 'failed' : 'settled',
         activeTurnId: '',
       }))
+      clearActiveTurnId(threadId)
       setTurnActivityForThread(threadId, null)
       setTurnErrorForThread(threadId, null)
       pendingThreadMessageRefreshRef.value.add(threadId)

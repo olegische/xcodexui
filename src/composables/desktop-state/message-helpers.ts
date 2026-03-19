@@ -1,5 +1,7 @@
 import type { CommandExecutionData, ToolCallData, UiFileAttachment, UiMessage } from '../../types/codex'
+import { IS_WASM_RUNTIME } from '../../config/runtime'
 import type {
+  FinalizedTurnSnapshotState,
   LiveTurnEvent,
   TurnActivityState,
   TurnSummaryState,
@@ -274,6 +276,19 @@ export function reconcileFinalizedMessages(
 
 export function isWorkedMessage(message: UiMessage): boolean {
   return message.messageType === 'worked'
+}
+
+export function shouldPreserveFinalizedSnapshot(
+  finalizedSnapshot: FinalizedTurnSnapshotState | null,
+  confirmedTranscript: UiMessage[],
+): boolean {
+  if (!IS_WASM_RUNTIME || !finalizedSnapshot) return false
+  const requiredMessages = finalizedSnapshot.messages.filter((message) =>
+    isWorkedMessage(message) || message.messageType === 'toolCall' || message.messageType === 'commandExecution',
+  )
+  return requiredMessages.some((message) =>
+    !confirmedTranscript.some((confirmed) => areMessageFieldsEqual(confirmed, message)),
+  )
 }
 
 export function omitKey<TValue>(record: Record<string, TValue>, key: string): Record<string, TValue> {

@@ -1,8 +1,15 @@
 import type { Ref } from 'vue'
 import type { UiMessage } from '../../types/codex'
-import { mergeMessages, reconcileFinalizedMessages } from './message-helpers'
+import {
+  areMessageFieldsEqual,
+  mergeMessages,
+  projectLiveTurnEvents,
+  reconcileFinalizedMessages,
+  shouldPreserveFinalizedSnapshot,
+} from './message-helpers'
 import type {
   ChatPhase,
+  FinalizedTurnSnapshotState,
   LedgerThreadState,
   LiveTextSegmentState,
   LiveTurnEvent,
@@ -13,6 +20,7 @@ export function defaultLedgerThreadState(): LedgerThreadState {
     phase: 'idle',
     confirmedTranscript: [],
     liveEventLog: [],
+    finalizedSnapshot: null,
     activeTurnId: '',
     activeSegment: null,
     nextSegmentCount: 0,
@@ -57,6 +65,10 @@ export function createDesktopLedger(params: {
     options: { inProgress: boolean; preserveMissing?: boolean } = { inProgress: false },
   ): void {
     updateLedgerThreadState(threadId, (current) => {
+      const preserveActiveTurn =
+        !options.inProgress
+        && current.phase === 'live'
+        && current.activeTurnId.trim().length > 0
       const mergedMessages = options.inProgress
         ? mergeMessages(current.confirmedTranscript, nextMessages, {
             preserveMissing: options.preserveMissing === true,
@@ -66,15 +78,58 @@ export function createDesktopLedger(params: {
         options.inProgress
           ? (current.phase === 'finalizing' ? 'finalizing' : 'live')
           : (current.phase === 'failed' ? 'failed' : 'settled')
+      const preserveSnapshot = !options.inProgress && shouldPreserveFinalizedSnapshot(current.finalizedSnapshot, mergedMessages)
       return {
         ...current,
         confirmedTranscript: mergedMessages,
-        phase,
-        liveEventLog: options.inProgress ? current.liveEventLog : [],
-        activeTurnId: options.inProgress ? current.activeTurnId : '',
-        activeSegment: options.inProgress ? current.activeSegment : null,
+        phase: preserveActiveTurn ? 'live' : preserveSnapshot ? 'finalizing' : phase,
+        liveEventLog: options.inProgress || preserveActiveTurn ? current.liveEventLog : [],
+        finalizedSnapshot:
+          options.inProgress || preserveSnapshot || preserveActiveTurn
+            ? current.finalizedSnapshot
+            : null,
+        activeTurnId: options.inProgress || preserveActiveTurn ? current.activeTurnId : '',
+        activeSegment: options.inProgress || preserveActiveTurn ? current.activeSegment : null,
       }
     })
+  }
+
+  function setFinalizedTurnSnapshotForThread(
+    threadId: string,
+    snapshot: FinalizedTurnSnapshotState | null,
+    options: { forceClear?: boolean } = {},
+  ): void {
+    updateLedgerThreadState(threadId, (current) => ({
+      ...current,
+      phase: snapshot
+        ? 'finalizing'
+        : current.phase === 'finalizing'
+          ? 'settled'
+          : current.phase,
+      finalizedSnapshot:
+        snapshot
+          ? snapshot
+          : (!options.forceClear && shouldPreserveFinalizedSnapshot(current.finalizedSnapshot, current.confirmedTranscript))
+              ? current.finalizedSnapshot
+              : null,
+      activeTurnId: snapshot ? current.activeTurnId : '',
+    }))
+  }
+
+  function buildFinalizedTurnSnapshot(
+    threadId: string,
+    turnId: string,
+    options: { extraMessages?: UiMessage[] } = {},
+  ): FinalizedTurnSnapshotState {
+    const ledger = getLedgerThreadState(threadId)
+    const liveMessages = projectLiveTurnEvents(ledger.liveEventLog)
+    const extraMessages = (options.extraMessages ?? []).filter((message) =>
+      !ledger.confirmedTranscript.some((confirmed) => areMessageFieldsEqual(confirmed, message)),
+    )
+    return {
+      turnId,
+      messages: [...ledger.confirmedTranscript, ...extraMessages, ...liveMessages],
+    }
   }
 
   function clearActiveLiveTextSegment(threadId: string): void {
@@ -141,6 +196,8 @@ export function createDesktopLedger(params: {
     isThreadInProgress,
     updateLedgerThreadState,
     setConfirmedTranscriptForThread,
+    setFinalizedTurnSnapshotForThread,
+    buildFinalizedTurnSnapshot,
     clearActiveLiveTextSegment,
     appendLiveTextSegment,
     hasLiveTextSegmentsForItem,

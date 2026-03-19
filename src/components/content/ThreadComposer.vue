@@ -177,7 +177,7 @@
 
           <button
             v-if="isTurnInProgress"
-            class="thread-composer-stop"
+            class="thread-composer-submit thread-composer-stop"
             type="button"
             aria-label="Stop"
             :disabled="disabled || !activeThreadId || isInterruptingTurn"
@@ -186,13 +186,13 @@
             <IconTablerPlayerStopFilled class="thread-composer-stop-icon" />
           </button>
           <button
+            v-else
             class="thread-composer-submit"
-            :class="{ 'thread-composer-submit--queue': isTurnInProgress && inProgressMode === 'queue' }"
             type="button"
-            :aria-label="isTurnInProgress && inProgressMode === 'queue' ? 'Queue message' : 'Send message'"
-            :title="isTurnInProgress ? `Send as ${inProgressMode}` : 'Send'"
+            aria-label="Send message"
+            title="Send"
             :disabled="!canSubmit"
-            @click="onSubmit(isTurnInProgress ? inProgressMode : 'steer')"
+            @click="onSubmit('steer')"
           >
             <IconTablerArrowUp class="thread-composer-submit-icon" />
           </button>
@@ -917,10 +917,6 @@ watch(
 
 .thread-composer-submit {
   @apply inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border-0 bg-zinc-900 text-white transition hover:bg-black disabled:cursor-not-allowed disabled:bg-zinc-200 disabled:text-zinc-500;
-}
-
-.thread-composer-submit--queue {
-  @apply bg-amber-600 hover:bg-amber-700;
 }
 
 .thread-composer-submit-icon {
