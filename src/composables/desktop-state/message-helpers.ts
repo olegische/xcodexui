@@ -59,8 +59,26 @@ export function mergeMessages(
 ): UiMessage[] {
   if (!options.preserveMissing) return areMessageArraysEqual(previous, incoming) ? previous : incoming
   const next = [...incoming]
+  const maxIncomingTurnIndex = incoming.reduce((max, message) => (
+    typeof message.turnIndex === 'number' ? Math.max(max, message.turnIndex) : max
+  ), -1)
+
   for (const previousMessage of previous) {
-    if (!incoming.some((message) => areMessageFieldsEqual(message, previousMessage))) next.push(previousMessage)
+    if (incoming.some((message) => areMessageFieldsEqual(message, previousMessage))) continue
+
+    if (!isStructuredExecutionMessage(previousMessage)) {
+      next.push(previousMessage)
+      continue
+    }
+
+    const inferredMessage = withInferredTurnIndex(previousMessage, next, next.length, maxIncomingTurnIndex)
+    const insertionIndex = findInsertionIndex(previous, next, previousMessage.id)
+    const resolvedInsertionIndex = insertionIndex < next.length
+      ? insertionIndex
+      : (typeof inferredMessage.turnIndex === 'number'
+          ? findTurnFallbackInsertionIndex(next, inferredMessage.turnIndex)
+          : insertionIndex)
+    next.splice(resolvedInsertionIndex, 0, inferredMessage)
   }
   return next
 }
