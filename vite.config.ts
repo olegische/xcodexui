@@ -346,8 +346,8 @@ export default defineConfig({
       "@browser-codex/wasm-browser-codex-runtime": fileURLToPath(new URL("../browser-codex/codex-rs/wasm/ts/browser-codex-runtime/src", import.meta.url)),
       "@browser-codex/wasm-browser-tools": fileURLToPath(new URL("../browser-codex/codex-rs/wasm/ts/browser-tools/src", import.meta.url)),
       "@browser-codex/wasm-model-transport": fileURLToPath(new URL("../browser-codex/codex-rs/wasm/ts/model-transport/src", import.meta.url)),
+      "@browser-codex/wasm-runtime-client": fileURLToPath(new URL("../browser-codex/codex-rs/wasm/ts/runtime-client/src", import.meta.url)),
       "@browser-codex/wasm-runtime-core": fileURLToPath(new URL("../browser-codex/codex-rs/wasm/ts/runtime-core/src", import.meta.url)),
-      "@browser-codex/app-webui-runtime": fileURLToPath(new URL("../browser-codex/codex-rs/wasm/apps/webui/src/runtime", import.meta.url)),
     },
   },
 });

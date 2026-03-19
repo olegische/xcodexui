@@ -21,12 +21,12 @@
       "@browser-codex/wasm-browser-codex-runtime/*": ["../browser-codex/codex-rs/wasm/ts/browser-codex-runtime/src/*"],
       "@browser-codex/wasm-model-transport": ["../browser-codex/codex-rs/wasm/ts/model-transport/src/index.ts"],
       "@browser-codex/wasm-model-transport/*": ["../browser-codex/codex-rs/wasm/ts/model-transport/src/*"],
+      "@browser-codex/wasm-runtime-client": ["../browser-codex/codex-rs/wasm/ts/runtime-client/src/index.ts"],
+      "@browser-codex/wasm-runtime-client/*": ["../browser-codex/codex-rs/wasm/ts/runtime-client/src/*"],
       "@browser-codex/wasm-runtime-core/types": ["../browser-codex/codex-rs/wasm/ts/runtime-core/src/types.ts"],
       "@browser-codex/wasm-runtime-core": ["../browser-codex/codex-rs/wasm/ts/runtime-core/src/index.ts"],
-      "@browser-codex/wasm-runtime-core/*": ["../browser-codex/codex-rs/wasm/ts/runtime-core/src/*"],
-      "@browser-codex/app-webui-runtime/*": ["../browser-codex/codex-rs/wasm/apps/webui/src/runtime/*"]
+      "@browser-codex/wasm-runtime-core/*": ["../browser-codex/codex-rs/wasm/ts/runtime-core/src/*"]
     }
   },
-  "include": ["src/**/*.ts", "src/**/*.vue", "vite.config.ts"],
-  "exclude": ["src/integrations/**"]
+  "include": ["src/**/*.ts", "src/**/*.vue", "vite.config.ts"]
 }

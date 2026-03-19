@@ -1,16 +1,14 @@
-import { XROUTER_PROVIDER_OPTIONS } from '@browser-codex/app-webui-runtime/constants'
-import type {
-  AuthState,
-  CodexCompatibleConfig,
-  DemoTransportMode,
-  XrouterProvider,
-} from '@browser-codex/app-webui-runtime/types'
 import {
   activeProviderApiKey,
   detectTransportMode,
   getActiveProvider,
   materializeCodexConfig,
-} from '@browser-codex/app-webui-runtime/utils'
+  XROUTER_PROVIDER_OPTIONS,
+  type AuthState,
+  type CodexCompatibleConfig,
+  type DemoTransportMode,
+  type XrouterProvider,
+} from '@browser-codex/wasm-runtime-client'
 import { getWasmRuntimeContext } from './runtime'
 import { loadStoredAuthState, loadStoredCodexConfig, saveStoredAuthState, saveStoredCodexConfig } from './storage'
 

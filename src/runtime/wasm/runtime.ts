@@ -4,28 +4,31 @@ import {
   createNormalizedModelTurnRunner,
 } from '@browser-codex/wasm-browser-host/runtime-host'
 import {
-  createBrowserCodexRuntime,
   type BrowserCodexProtocolClient,
+  createBrowserCodexRuntime,
 } from '@browser-codex/wasm-browser-codex-runtime'
 import {
   createBrowserAwareToolExecutor,
   initializePageTelemetry,
 } from '@browser-codex/wasm-browser-tools'
-import { loadRuntimeModule } from '@browser-codex/app-webui-runtime/assets'
-import { DEFAULT_CODEX_CONFIG, DEFAULT_DEMO_INSTRUCTIONS } from '@browser-codex/app-webui-runtime/constants'
-import type {
-  AuthState,
-  CodexCompatibleConfig,
-  ModelPreset,
-} from '@browser-codex/app-webui-runtime/types'
 import type { StoredThreadSession } from '@browser-codex/wasm-runtime-core'
-import { activeProviderApiKey, formatError, getActiveProvider } from '@browser-codex/app-webui-runtime/utils'
 import {
   applyWorkspacePatch,
+  createBrowserRuntimeModelTransportAdapter,
   listWorkspaceDir,
+  loadRuntimeModule,
+  loadXrouterRuntime,
   readWorkspaceFile,
   searchWorkspace,
-} from '@browser-codex/app-webui-runtime/workspace'
+  activeProviderApiKey,
+  DEFAULT_CODEX_CONFIG,
+  DEFAULT_DEMO_INSTRUCTIONS,
+  formatError,
+  getActiveProvider,
+  type AuthState,
+  type CodexCompatibleConfig,
+  type ModelPreset,
+} from '@browser-codex/wasm-runtime-client'
 import type { RpcNotification } from '../../api/codexRpcClient'
 import { BROWSER_WORKSPACE_ROOT } from '../../config/runtime'
 import {
@@ -41,7 +44,6 @@ import {
   saveStoredThreadSession,
   saveStoredUserConfig,
 } from './storage'
-import { webUiModelTransportAdapter } from './modelTransport'
 
 type WasmBrowserRuntime = BrowserCodexProtocolClient & {
   loadAuthState(): Promise<AuthState | null>
@@ -61,6 +63,9 @@ type WasmRuntimeContext = {
 }
 let runtimeContextPromise: Promise<WasmRuntimeContext> | null = null
 const browserToolExecutor = createBrowserAwareToolExecutor()
+const browserModelTransportAdapter = createBrowserRuntimeModelTransportAdapter({
+  loadXrouterRuntime,
+})
 let pageTelemetryInitialized = false
 
 export async function getWasmRuntimeContext(): Promise<WasmRuntimeContext> {
@@ -190,7 +195,7 @@ export async function getWasmRuntimeContext(): Promise<WasmRuntimeContext> {
           return getActiveProvider(config).providerKind
         },
         async runModelTurn(params) {
-          return await webUiModelTransportAdapter.runModelTurn(params)
+          return await browserModelTransportAdapter.runModelTurn(params)
         },
       }),
     })
@@ -231,7 +236,7 @@ export async function getWasmRuntimeContext(): Promise<WasmRuntimeContext> {
           }
         },
         async discoverModels({ config }) {
-          return await webUiModelTransportAdapter.discoverModels(config)
+          return await browserModelTransportAdapter.discoverModels(config)
         },
         async refreshAuth() {
           throw new Error('xcodexui wasm mode uses API keys only.')
