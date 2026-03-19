@@ -165,6 +165,95 @@ export function projectLiveTurnEvents(events: LiveTurnEvent[]): UiMessage[] {
   return removeRedundantLiveAgentMessages([], projected)
 }
 
+function isStructuredExecutionMessage(message: UiMessage): boolean {
+  return message.messageType === 'commandExecution' || message.messageType === 'toolCall'
+}
+
+function hasSameMessageId(messages: UiMessage[], messageId: string): boolean {
+  return messages.some((message) => message.id === messageId)
+}
+
+function findTurnFallbackInsertionIndex(result: UiMessage[], turnIndex: number): number {
+  let lastSameTurnIndex = -1
+  let lastAssistantInTurnIndex = -1
+
+  for (let index = 0; index < result.length; index += 1) {
+    const message = result[index]
+    if (message?.turnIndex === turnIndex) {
+      lastSameTurnIndex = index
+      if (message.role === 'assistant') lastAssistantInTurnIndex = index
+      continue
+    }
+    if (typeof message?.turnIndex === 'number' && message.turnIndex > turnIndex) {
+      return lastAssistantInTurnIndex >= 0 ? lastAssistantInTurnIndex : index
+    }
+  }
+
+  if (lastAssistantInTurnIndex >= 0) return lastAssistantInTurnIndex
+  if (lastSameTurnIndex >= 0) return lastSameTurnIndex + 1
+  return result.length
+}
+
+function findInsertionIndex(reference: UiMessage[], result: UiMessage[], messageId: string): number {
+  const referenceIndex = reference.findIndex((message) => message.id === messageId)
+  if (referenceIndex === -1) return result.length
+
+  for (let index = referenceIndex + 1; index < reference.length; index += 1) {
+    const nextReferenceId = reference[index]?.id
+    if (!nextReferenceId) continue
+    const resultIndex = result.findIndex((message) => message.id === nextReferenceId)
+    if (resultIndex !== -1) return resultIndex
+  }
+
+  for (let index = referenceIndex - 1; index >= 0; index -= 1) {
+    const previousReferenceId = reference[index]?.id
+    if (!previousReferenceId) continue
+    const resultIndex = result.findIndex((message) => message.id === previousReferenceId)
+    if (resultIndex !== -1) return resultIndex + 1
+  }
+
+  return result.length
+}
+
+function withInferredTurnIndex(message: UiMessage, result: UiMessage[], insertIndex: number, fallbackTurnIndex: number): UiMessage {
+  if (typeof message.turnIndex === 'number') return message
+  const nextTurnIndex = result[insertIndex]?.turnIndex
+  if (typeof nextTurnIndex === 'number') return { ...message, turnIndex: nextTurnIndex }
+  const previousTurnIndex = result[insertIndex - 1]?.turnIndex
+  if (typeof previousTurnIndex === 'number') return { ...message, turnIndex: previousTurnIndex }
+  return fallbackTurnIndex >= 0 ? { ...message, turnIndex: fallbackTurnIndex } : message
+}
+
+export function reconcileFinalizedMessages(
+  previous: UiMessage[],
+  incoming: UiMessage[],
+  liveEvents: LiveTurnEvent[],
+): UiMessage[] {
+  const result = [...incoming]
+  const maxIncomingTurnIndex = incoming.reduce((max, message) => (
+    typeof message.turnIndex === 'number' ? Math.max(max, message.turnIndex) : max
+  ), -1)
+  const projectedLive = projectLiveTurnEvents(liveEvents)
+  const references = [projectedLive, previous]
+
+  for (const reference of references) {
+    for (const message of reference) {
+      if (!isStructuredExecutionMessage(message) || hasSameMessageId(result, message.id)) continue
+      if (typeof message.turnIndex === 'number' && maxIncomingTurnIndex >= 0 && message.turnIndex > maxIncomingTurnIndex) continue
+      const inferredMessage = withInferredTurnIndex(message, result, result.length, maxIncomingTurnIndex)
+      const insertionIndex = findInsertionIndex(reference, result, message.id)
+      const resolvedInsertionIndex = insertionIndex < result.length
+        ? insertionIndex
+        : (typeof inferredMessage.turnIndex === 'number'
+            ? findTurnFallbackInsertionIndex(result, inferredMessage.turnIndex)
+            : insertionIndex)
+      result.splice(resolvedInsertionIndex, 0, inferredMessage)
+    }
+  }
+
+  return areMessageArraysEqual(previous, result) ? previous : result
+}
+
 export function isWorkedMessage(message: UiMessage): boolean {
   return message.messageType === 'worked'
 }

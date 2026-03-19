@@ -1,6 +1,6 @@
 import type { Ref } from 'vue'
 import type { UiMessage } from '../../types/codex'
-import { mergeMessages } from './message-helpers'
+import { mergeMessages, reconcileFinalizedMessages } from './message-helpers'
 import type {
   ChatPhase,
   LedgerThreadState,
@@ -61,7 +61,7 @@ export function createDesktopLedger(params: {
         ? mergeMessages(current.confirmedTranscript, nextMessages, {
             preserveMissing: options.preserveMissing === true,
           })
-        : nextMessages
+        : reconcileFinalizedMessages(current.confirmedTranscript, nextMessages, current.liveEventLog)
       const phase: ChatPhase =
         options.inProgress
           ? (current.phase === 'finalizing' ? 'finalizing' : 'live')
