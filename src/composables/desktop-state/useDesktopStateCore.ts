@@ -50,7 +50,6 @@ import {
   omitKey as omitKeyHelper,
   parseIsoTimestamp as parseIsoTimestampHelper,
   projectLiveTurnEvents as projectLiveTurnEventsHelper,
-  shouldPreserveFinalizedSnapshot as shouldPreserveFinalizedSnapshotHelper,
   upsertMessage as upsertMessageHelper,
 } from './message-helpers'
 import {
@@ -114,7 +113,6 @@ import {
 import type {
   ChatPhase,
   FileAttachment,
-  FinalizedTurnSnapshotState,
   LedgerThreadState,
   LiveTextSegmentState,
   LiveTurnEvent,
@@ -327,7 +325,6 @@ const areTurnSummariesEqual = areTurnSummariesEqualHelper
 const areTurnActivitiesEqual = areTurnActivitiesEqualHelper
 const insertTurnSummaryMessage = insertTurnSummaryMessageHelper
 const projectLiveTurnEvents = projectLiveTurnEventsHelper
-const shouldPreserveFinalizedSnapshot = shouldPreserveFinalizedSnapshotHelper
 const omitKey = omitKeyHelper
 const mergeThreadGroups = mergeThreadGroupsHelper
 const toProjectNameFromWorkspaceRoot = toProjectNameFromWorkspaceRootHelper
@@ -436,7 +433,7 @@ export function useDesktopState() {
     if (!pending) return null
 
     const ledger = getLedgerThreadState(threadId)
-    const persisted = ledger.finalizedSnapshot?.messages ?? ledger.confirmedTranscript
+    const persisted = ledger.confirmedTranscript
     const liveMessages = projectLiveTurnEvents(ledger.liveEventLog)
     const latestPersistedUserMessage = [...persisted].reverse().find((message) => message.role === 'user')
 
@@ -475,7 +472,7 @@ export function useDesktopState() {
     const ledger = getLedgerThreadState(threadId)
     const pendingUserMessage = selectedPendingUserMessage.value
     const liveMessages = projectLiveTurnEvents(ledger.liveEventLog)
-    const baseMessages = ledger.finalizedSnapshot?.messages ?? ledger.confirmedTranscript
+    const baseMessages = ledger.confirmedTranscript
     const combined = pendingUserMessage
       ? [...baseMessages, pendingUserMessage, ...liveMessages]
       : [...baseMessages, ...liveMessages]
@@ -574,8 +571,6 @@ export function useDesktopState() {
     isThreadInProgress,
     updateLedgerThreadState,
     setConfirmedTranscriptForThread,
-    setFinalizedTurnSnapshotForThread,
-    buildFinalizedTurnSnapshot,
     clearActiveLiveTextSegment,
     appendLiveTextSegment,
     hasLiveTextSegmentsForItem,
@@ -686,10 +681,8 @@ export function useDesktopState() {
         preserveMissing: options?.preserveMissing,
       })
     },
+    clearPendingTurnRequest,
     clearLiveLedger,
-    setFinalizedTurnSnapshotForThread: (threadId, snapshot) => {
-      setFinalizedTurnSnapshotForThread(threadId, snapshot as FinalizedTurnSnapshotState | null)
-    },
     loadThreads,
     refreshModelPreferences,
     setSelectedThreadId,
@@ -729,7 +722,6 @@ export function useDesktopState() {
     clearLiveLedger,
     clearActiveLiveTextSegment,
     setConfirmedTranscriptForThread,
-    setFinalizedTurnSnapshotForThread,
     setTurnSummaryForThread,
     setTurnActivityForThread,
     setTurnErrorForThread,
@@ -775,7 +767,6 @@ export function useDesktopState() {
     eventSyncDebounceMs: EVENT_SYNC_DEBOUNCE_MS,
     applyThreadFlags: () => applyThreadFlags(),
     setPendingTurnRequest,
-    clearPendingTurnRequest,
     processQueuedMessages,
     syncFromNotifications,
     applyFallbackModelSelection,
@@ -791,14 +782,11 @@ export function useDesktopState() {
     getLedgerThreadState,
     updateLedgerThreadState,
     setConfirmedTranscriptForThread,
-    setFinalizedTurnSnapshotForThread,
-    buildFinalizedTurnSnapshot,
     clearActiveLiveTextSegment,
     appendLiveTextSegment,
     hasLiveTextSegmentsForItem,
     clearLiveLedger,
     appendLiveEvent,
-    readString,
     asRecord,
   })
 

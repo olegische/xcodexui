@@ -1,8 +1,7 @@
 import type { Ref } from 'vue'
 import { persistThreadTitle, resumeThread, rollbackThreadRaw, startThreadTurnRaw, type RpcNotification } from '../../api/codexGateway'
 import { normalizeThreadMessagesV2 } from '../../api/normalizers/v2'
-import { areFileAttachmentsEqual, omitKey } from './message-helpers'
-import { areStringArraysEqual } from './thread-groups'
+import { omitKey } from './message-helpers'
 import {
   extractThreadIdFromNotification,
   isAgentContentEvent,
@@ -27,26 +26,6 @@ import {
   readTurnStartedInfo,
 } from './notification-parsers'
 
-function hasMatchingPersistedUserMessage(
-  transcript: Array<{
-    role?: string
-    text?: string
-    images?: string[]
-    fileAttachments?: Array<{ label: string; path: string }>
-  }>,
-  pending: {
-    text: string
-    imageUrls: string[]
-    fileAttachments: Array<{ label: string; path: string }>
-  },
-): boolean {
-  const latestPersistedUserMessage = [...transcript].reverse().find((message) => message.role === 'user')
-  if (!latestPersistedUserMessage) return false
-  return latestPersistedUserMessage.text === pending.text
-    && areStringArraysEqual(latestPersistedUserMessage.images, pending.imageUrls)
-    && areFileAttachmentsEqual(latestPersistedUserMessage.fileAttachments, pending.fileAttachments)
-}
-
 export function createThreadRealtime(params: {
   selectedThreadId: Ref<string>
   selectedModelId: Ref<string>
@@ -65,7 +44,6 @@ export function createThreadRealtime(params: {
   eventSyncDebounceMs: number
   applyThreadFlags: () => void
   setPendingTurnRequest: (threadId: string, request: any) => void
-  clearPendingTurnRequest: (threadId: string) => void
   processQueuedMessages: (threadId: string) => Promise<void>
   syncFromNotifications: () => Promise<void>
   applyFallbackModelSelection: () => Promise<void>
@@ -81,14 +59,11 @@ export function createThreadRealtime(params: {
   getLedgerThreadState: (threadId: string) => any
   updateLedgerThreadState: (threadId: string, updater: (current: any) => any) => void
   setConfirmedTranscriptForThread: (threadId: string, messages: any[], options?: { inProgress: boolean }) => void
-  setFinalizedTurnSnapshotForThread: (threadId: string, snapshot: any | null, options?: { forceClear?: boolean }) => void
-  buildFinalizedTurnSnapshot: (threadId: string, turnId: string, options?: { extraMessages?: any[] }) => any
   clearActiveLiveTextSegment: (threadId: string) => void
   appendLiveTextSegment: (threadId: string, kind: 'assistant' | 'reasoning', itemId: string, delta: string) => void
   hasLiveTextSegmentsForItem: (threadId: string, kind: 'assistant' | 'reasoning', itemId: string) => boolean
   clearLiveLedger: (threadId: string) => void
   appendLiveEvent: (threadId: string, event: any) => void
-  readString: (value: unknown) => string
   asRecord: (value: unknown) => Record<string, unknown> | null
 }) {
   const {
@@ -109,7 +84,6 @@ export function createThreadRealtime(params: {
     eventSyncDebounceMs,
     applyThreadFlags,
     setPendingTurnRequest,
-    clearPendingTurnRequest,
     processQueuedMessages,
     syncFromNotifications,
     applyFallbackModelSelection,
@@ -125,14 +99,11 @@ export function createThreadRealtime(params: {
     getLedgerThreadState,
     updateLedgerThreadState,
     setConfirmedTranscriptForThread,
-    setFinalizedTurnSnapshotForThread,
-    buildFinalizedTurnSnapshot,
     clearActiveLiveTextSegment,
     appendLiveTextSegment,
     hasLiveTextSegmentsForItem,
     clearLiveLedger,
     appendLiveEvent,
-    readString,
     asRecord,
   } = params
 
@@ -152,13 +123,12 @@ export function createThreadRealtime(params: {
         setConfirmedTranscriptForThread(threadId, rolledBackMessages, { inProgress: false })
         clearLiveLedger(threadId)
         clearActiveLiveTextSegment(threadId)
-        setFinalizedTurnSnapshotForThread(threadId, null, { forceClear: true })
       } catch {}
       setTurnErrorForThread(threadId, null)
       error.value = ''
       setTurnSummaryForThread(threadId, null)
       setTurnActivityForThread(threadId, { label: 'Thinking', details: buildPendingTurnDetails(modelFallbackId, pending.effort) })
-      updateLedgerThreadState(threadId, (current) => ({ ...current, phase: 'live', finalizedSnapshot: null }))
+      updateLedgerThreadState(threadId, (current) => ({ ...current, phase: 'live' }))
       if (resumedThreadById.value[threadId] !== true) await resumeThread(threadId)
       await startThreadTurnRaw(threadId, buildProtocolTurnInput(pending.text, pending.imageUrls, pending.skills, pending.fileAttachments), {
         model: modelFallbackId,
@@ -197,8 +167,7 @@ export function createThreadRealtime(params: {
     const startedTurn = readTurnStartedInfo(notification)
     if (startedTurn) {
       pendingTurnStartsById.set(startedTurn.turnId, startedTurn)
-      updateLedgerThreadState(startedTurn.threadId, (current) => ({ ...current, phase: 'live', activeTurnId: startedTurn.turnId, finalizedSnapshot: null, liveEventLog: [], activeSegment: null }))
-      setFinalizedTurnSnapshotForThread(startedTurn.threadId, null, { forceClear: true })
+      updateLedgerThreadState(startedTurn.threadId, (current) => ({ ...current, phase: 'live', activeTurnId: startedTurn.turnId, liveEventLog: [], activeSegment: null }))
       setTurnSummaryForThread(startedTurn.threadId, null)
       setTurnErrorForThread(startedTurn.threadId, null)
       if (eventUnreadByThreadId.value[startedTurn.threadId]) {
@@ -229,7 +198,10 @@ export function createThreadRealtime(params: {
       error.value = turnErrorMessage
       if (failedThreadId && shouldRetryWithFallback) void retryPendingTurnWithFallback(failedThreadId)
     } else if (completedTurn) {
-      updateLedgerThreadState(completedTurn.threadId, (current) => ({ ...current, phase: current.finalizedSnapshot ? 'finalizing' : 'settled' }))
+      updateLedgerThreadState(completedTurn.threadId, (current) => ({
+        ...current,
+        phase: current.liveEventLog.length > 0 ? 'finalizing' : 'settled',
+      }))
       setTurnErrorForThread(completedTurn.threadId, null)
     }
     const notificationErrorMessage = readNotificationErrorMessage(notification)
@@ -305,51 +277,12 @@ export function createThreadRealtime(params: {
       activeReasoningItemIdRef.value = ''
       shouldAutoScrollRef.value = false
       clearActiveLiveTextSegment(notificationThreadId)
-      const completedTurnId = completedTurn?.turnId || readString(asRecord(asRecord(notification.params)?.turn)?.id) || getLedgerThreadState(notificationThreadId).activeTurnId || `${notificationThreadId}:unknown`
-      const pending = pendingTurnRequestByThreadId.value[notificationThreadId]
-      const shouldIncludePendingUserMessage = pending
-        ? !hasMatchingPersistedUserMessage(
-            getLedgerThreadState(notificationThreadId).confirmedTranscript,
-            {
-              text: pending.text,
-              imageUrls: pending.imageUrls,
-              fileAttachments: pending.fileAttachments.map((file: { label: string; path: string }) => ({
-                label: file.label,
-                path: file.path,
-              })),
-            },
-          )
-        : false
-      const pendingUserMessage = pending
-        && shouldIncludePendingUserMessage
-        ? {
-            id: `pending-user:${notificationThreadId}`,
-            role: 'user' as const,
-            text: pending.text,
-            images: pending.imageUrls.length > 0 ? [...pending.imageUrls] : undefined,
-            fileAttachments: pending.fileAttachments.length > 0
-              ? pending.fileAttachments.map((file: { label: string; path: string }) => ({
-                  label: file.label,
-                  path: file.path,
-                }))
-              : undefined,
-            messageType: 'userMessage',
-          }
-        : null
-      setFinalizedTurnSnapshotForThread(
-        notificationThreadId,
-        buildFinalizedTurnSnapshot(notificationThreadId, completedTurnId, {
-          extraMessages: pendingUserMessage ? [pendingUserMessage] : [],
-        }),
-      )
-      clearLiveLedger(notificationThreadId)
       updateLedgerThreadState(notificationThreadId, (current) => ({ ...current, phase: 'finalizing', activeTurnId: '' }))
       const completedThreadId2 = extractThreadIdFromNotification(notification)
       if (completedThreadId2) {
         setTurnActivityForThread(completedThreadId2, null)
         markThreadUnreadByEvent(completedThreadId2)
         if (!shouldRetryWithFallback) {
-          clearPendingTurnRequest(completedThreadId2)
           void processQueuedMessages(completedThreadId2)
         }
       }

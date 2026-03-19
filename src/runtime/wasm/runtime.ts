@@ -11,7 +11,6 @@ import {
   createBrowserAwareToolExecutor,
   initializePageTelemetry,
 } from '@browser-codex/wasm-browser-tools'
-import { threadToSessionSnapshot } from '@browser-codex/wasm-runtime-core'
 import { loadRuntimeModule } from '@browser-codex/app-webui-runtime/assets'
 import { DEFAULT_CODEX_CONFIG, DEFAULT_DEMO_INSTRUCTIONS } from '@browser-codex/app-webui-runtime/constants'
 import type {
@@ -19,7 +18,8 @@ import type {
   CodexCompatibleConfig,
   ModelPreset,
 } from '@browser-codex/app-webui-runtime/types'
-import { activeProviderApiKey, formatError, getActiveProvider, normalizeHostValue } from '@browser-codex/app-webui-runtime/utils'
+import type { StoredThreadSession } from '@browser-codex/wasm-runtime-core'
+import { activeProviderApiKey, formatError, getActiveProvider } from '@browser-codex/app-webui-runtime/utils'
 import {
   applyWorkspacePatch,
   listWorkspaceDir,
@@ -29,23 +29,19 @@ import {
 import type { RpcNotification } from '../../api/codexRpcClient'
 import { BROWSER_WORKSPACE_ROOT } from '../../config/runtime'
 import {
+  deleteStoredThreadSession,
   clearStoredAuthState,
   loadStoredAuthState,
   loadStoredCodexConfig,
-  loadStoredSession,
+  loadStoredThreadSession,
   loadStoredUserConfig,
+  listStoredThreadSessions,
   saveStoredAuthState,
   saveStoredCodexConfig,
-  saveStoredSession,
+  saveStoredThreadSession,
   saveStoredUserConfig,
 } from './storage'
 import { webUiModelTransportAdapter } from './modelTransport'
-
-type SessionSnapshot = {
-  threadId: string
-  metadata: unknown
-  items: unknown[]
-}
 
 type WasmBrowserRuntime = BrowserCodexProtocolClient & {
   loadAuthState(): Promise<AuthState | null>
@@ -61,7 +57,6 @@ type WasmRuntimeContext = {
   runtime: WasmBrowserRuntime
   loadConfig: () => Promise<CodexCompatibleConfig>
   saveConfig: (config: CodexCompatibleConfig) => Promise<void>
-  loadSession: (threadId: string) => Promise<SessionSnapshot | null>
   subscribe: (listener: (notification: RpcNotification) => void) => () => void
 }
 let runtimeContextPromise: Promise<WasmRuntimeContext> | null = null
@@ -139,6 +134,52 @@ export async function getWasmRuntimeContext(): Promise<WasmRuntimeContext> {
           content: record.content,
         })
       },
+      async loadThreadSession(request: unknown) {
+        const record =
+          request !== null && typeof request === 'object' && !Array.isArray(request)
+            ? request as Record<string, unknown>
+            : {}
+        const threadId = typeof record.threadId === 'string' ? record.threadId : ''
+        if (!threadId) {
+          throw new Error('loadThreadSession requires threadId')
+        }
+        const session = await loadStoredThreadSession(threadId)
+        if (session === null) {
+          throw new Error(`thread session not found: ${threadId}`)
+        }
+        return { session }
+      },
+      async saveThreadSession(request: unknown) {
+        const record =
+          request !== null && typeof request === 'object' && !Array.isArray(request)
+            ? request as Record<string, unknown>
+            : {}
+        const session =
+          record.session !== null && typeof record.session === 'object' && !Array.isArray(record.session)
+            ? record.session as StoredThreadSession
+            : null
+        if (session === null || session.metadata?.threadId?.length === 0 || !Array.isArray(session.items)) {
+          throw new Error('saveThreadSession requires session metadata and items')
+        }
+        await saveStoredThreadSession(session)
+        return null
+      },
+      async deleteThreadSession(request: unknown) {
+        const record =
+          request !== null && typeof request === 'object' && !Array.isArray(request)
+            ? request as Record<string, unknown>
+            : {}
+        const threadId = typeof record.threadId === 'string' ? record.threadId : ''
+        if (!threadId) {
+          throw new Error('deleteThreadSession requires threadId')
+        }
+        await deleteStoredThreadSession(threadId)
+        return null
+      },
+      async listThreadSessions() {
+        const sessions = await listStoredThreadSessions()
+        return { sessions }
+      },
       async listDiscoverableApps() {
         return []
       },
@@ -159,7 +200,6 @@ export async function getWasmRuntimeContext(): Promise<WasmRuntimeContext> {
       CodexCompatibleConfig,
       { email: string | null; planType: string | null; chatgptAccountId: string | null; authMode: string | null } | null,
       ModelPreset,
-      SessionSnapshot,
       never
     >({
       runtimeModule: runtimeModule as Parameters<typeof createBrowserCodexRuntime>[0]['runtimeModule'],
@@ -170,8 +210,6 @@ export async function getWasmRuntimeContext(): Promise<WasmRuntimeContext> {
           saveAuthState: saveStoredAuthState,
           clearAuthState: clearStoredAuthState,
           loadConfig: async () => await loadStoredCodexConfig().catch(() => structuredClone(DEFAULT_CODEX_CONFIG)),
-          loadSession: loadStoredSession,
-          saveSession: saveStoredSession,
         },
         dynamicTools: browserToolExecutor,
         async readAccount({ authState, config }) {
@@ -198,12 +236,6 @@ export async function getWasmRuntimeContext(): Promise<WasmRuntimeContext> {
         async refreshAuth() {
           throw new Error('xcodexui wasm mode uses API keys only.')
         },
-        normalizeThread(thread) {
-          return normalizeHostValue(thread) as Record<string, unknown>
-        },
-        threadToSnapshot(thread) {
-          return threadToSessionSnapshot(thread) as unknown as SessionSnapshot
-        },
         formatError,
         async requestUserInput() {
           return { answers: [] }
@@ -216,7 +248,6 @@ export async function getWasmRuntimeContext(): Promise<WasmRuntimeContext> {
       runtime,
       loadConfig: loadStoredCodexConfig,
       saveConfig: saveStoredCodexConfig,
-      loadSession: loadStoredSession,
       subscribe(listener) {
         return runtime.subscribeToNotifications((notification) => {
           listener({

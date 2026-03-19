@@ -9,7 +9,7 @@ import {
 import { normalizeThreadMessagesV2 } from '../../api/normalizers/v2'
 import type { ReasoningEffort, UiMessage } from '../../types/codex'
 import { omitKey } from './message-helpers'
-import type { FileAttachment, FinalizedTurnSnapshotState, QueuedMessage } from './types'
+import type { FileAttachment, QueuedMessage } from './types'
 
 export function createThreadTurnActions(params: {
   selectedThreadId: Ref<string>
@@ -34,11 +34,6 @@ export function createThreadTurnActions(params: {
     threadId: string,
     messages: UiMessage[],
     options?: { inProgress: boolean; preserveMissing?: boolean },
-  ) => void
-  setFinalizedTurnSnapshotForThread: (
-    threadId: string,
-    snapshot: FinalizedTurnSnapshotState | null,
-    options?: { forceClear?: boolean },
   ) => void
   setTurnSummaryForThread: (threadId: string, summary: any | null) => void
   setTurnActivityForThread: (threadId: string, activity: any | null) => void
@@ -80,7 +75,6 @@ export function createThreadTurnActions(params: {
     clearLiveLedger,
     clearActiveLiveTextSegment,
     setConfirmedTranscriptForThread,
-    setFinalizedTurnSnapshotForThread,
     setTurnSummaryForThread,
     setTurnActivityForThread,
     setTurnErrorForThread,
@@ -178,7 +172,7 @@ export function createThreadTurnActions(params: {
       details: buildPendingTurnDetails(selectedModelId.value, selectedReasoningEffort.value),
     })
     setTurnErrorForThread(threadId, null)
-    updateLedgerThreadState(threadId, (current) => ({ ...current, phase: 'live', finalizedSnapshot: null }))
+    updateLedgerThreadState(threadId, (current) => ({ ...current, phase: 'live' }))
     try {
       await startTurnForThread(threadId, nextText, imageUrls, skills, fileAttachments)
     } catch (unknownError) {
@@ -234,7 +228,7 @@ export function createThreadTurnActions(params: {
         details: buildPendingTurnDetails(selectedModelId.value, selectedReasoningEffort.value),
       })
       setTurnErrorForThread(threadId, null)
-      updateLedgerThreadState(threadId, (current) => ({ ...current, phase: 'live', finalizedSnapshot: null }))
+      updateLedgerThreadState(threadId, (current) => ({ ...current, phase: 'live' }))
       void startTurnForThread(threadId, nextText, imageUrls, skills, fileAttachments)
         .catch((unknownError) => {
           shouldAutoScrollRef.value = false
@@ -286,7 +280,7 @@ export function createThreadTurnActions(params: {
       details: buildPendingTurnDetails(selectedModelId.value, selectedReasoningEffort.value),
     })
     setTurnErrorForThread(threadId, null)
-    updateLedgerThreadState(threadId, (current) => ({ ...current, phase: 'live', finalizedSnapshot: null }))
+    updateLedgerThreadState(threadId, (current) => ({ ...current, phase: 'live' }))
     try {
       await startTurnForThread(threadId, next.text, next.imageUrls, next.skills, next.fileAttachments)
     } catch {
@@ -347,7 +341,6 @@ export function createThreadTurnActions(params: {
       setConfirmedTranscriptForThread(threadId, nextMessages, { inProgress: false })
       clearLiveLedger(threadId)
       clearActiveLiveTextSegment(threadId)
-      setFinalizedTurnSnapshotForThread(threadId, null, { forceClear: true })
       setTurnSummaryForThread(threadId, null)
       setTurnActivityForThread(threadId, null)
       setTurnErrorForThread(threadId, null)

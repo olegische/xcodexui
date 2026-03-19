@@ -1,9 +1,10 @@
 import { DEFAULT_CODEX_CONFIG, PROVIDER_CONFIG_KEY, USER_CONFIG_STORAGE_KEY } from '@browser-codex/app-webui-runtime/constants'
 import type { AuthState, CodexCompatibleConfig } from '@browser-codex/app-webui-runtime/types'
+import type { StoredThreadSession, StoredThreadSessionMetadata } from '@browser-codex/wasm-runtime-core'
 import { normalizeCodexConfig } from '@browser-codex/app-webui-runtime/utils'
 
 const DB_NAME = 'codex-wasm-browser-terminal'
-const DB_VERSION = 4
+const DB_VERSION = 6
 
 type StoredUserConfig = {
   filePath: string
@@ -11,18 +12,13 @@ type StoredUserConfig = {
   content: string
 }
 
-type SessionSnapshot = {
-  threadId: string
-  metadata: unknown
-  items: unknown[]
-}
-
 async function openDb(): Promise<IDBDatabase> {
   return await new Promise((resolve, reject) => {
     const request = indexedDB.open(DB_NAME, DB_VERSION)
     request.onupgradeneeded = () => {
       const db = request.result
-      if (!db.objectStoreNames.contains('sessions')) db.createObjectStore('sessions')
+      if (db.objectStoreNames.contains('sessions')) db.deleteObjectStore('sessions')
+      if (!db.objectStoreNames.contains('threadSessions')) db.createObjectStore('threadSessions')
       if (!db.objectStoreNames.contains('authState')) db.createObjectStore('authState')
       if (!db.objectStoreNames.contains('providerConfig')) db.createObjectStore('providerConfig')
       if (!db.objectStoreNames.contains('userConfig')) db.createObjectStore('userConfig')
@@ -32,23 +28,46 @@ async function openDb(): Promise<IDBDatabase> {
   })
 }
 
-export async function loadStoredSession(threadId: string): Promise<SessionSnapshot | null> {
+export async function loadStoredThreadSession(threadId: string): Promise<StoredThreadSession | null> {
   const db = await openDb()
   return await new Promise((resolve, reject) => {
-    const tx = db.transaction('sessions', 'readonly')
-    const request = tx.objectStore('sessions').get(threadId)
-    request.onsuccess = () => resolve((request.result as SessionSnapshot | undefined) ?? null)
-    request.onerror = () => reject(request.error ?? new Error('failed to load session'))
+    const tx = db.transaction('threadSessions', 'readonly')
+    const request = tx.objectStore('threadSessions').get(threadId)
+    request.onsuccess = () => resolve((request.result as StoredThreadSession | undefined) ?? null)
+    request.onerror = () => reject(request.error ?? new Error('failed to load thread session'))
   })
 }
 
-export async function saveStoredSession(snapshot: SessionSnapshot): Promise<void> {
+export async function saveStoredThreadSession(session: StoredThreadSession): Promise<void> {
   const db = await openDb()
   await new Promise<void>((resolve, reject) => {
-    const tx = db.transaction('sessions', 'readwrite')
-    const request = tx.objectStore('sessions').put(snapshot, snapshot.threadId)
+    const tx = db.transaction('threadSessions', 'readwrite')
+    const request = tx.objectStore('threadSessions').put(session, session.metadata.threadId)
     request.onsuccess = () => resolve()
-    request.onerror = () => reject(request.error ?? new Error('failed to save session'))
+    request.onerror = () => reject(request.error ?? new Error('failed to save thread session'))
+  })
+}
+
+export async function deleteStoredThreadSession(threadId: string): Promise<void> {
+  const db = await openDb()
+  await new Promise<void>((resolve, reject) => {
+    const tx = db.transaction('threadSessions', 'readwrite')
+    const request = tx.objectStore('threadSessions').delete(threadId)
+    request.onsuccess = () => resolve()
+    request.onerror = () => reject(request.error ?? new Error('failed to delete thread session'))
+  })
+}
+
+export async function listStoredThreadSessions(): Promise<StoredThreadSessionMetadata[]> {
+  const db = await openDb()
+  return await new Promise((resolve, reject) => {
+    const tx = db.transaction('threadSessions', 'readonly')
+    const request = tx.objectStore('threadSessions').getAll()
+    request.onsuccess = () => {
+      const sessions = Array.isArray(request.result) ? request.result as StoredThreadSession[] : []
+      resolve(sessions.map((session) => session.metadata))
+    }
+    request.onerror = () => reject(request.error ?? new Error('failed to list thread sessions'))
   })
 }
 

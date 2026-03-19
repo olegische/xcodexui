@@ -1,6 +1,5 @@
 import type { CommandExecutionData, ToolCallData, UiFileAttachment, UiMessage } from '../../types/codex'
 import type {
-  FinalizedTurnSnapshotState,
   LiveTurnEvent,
   TurnActivityState,
   TurnSummaryState,
@@ -168,15 +167,6 @@ export function projectLiveTurnEvents(events: LiveTurnEvent[]): UiMessage[] {
 
 export function isWorkedMessage(message: UiMessage): boolean {
   return message.messageType === 'worked'
-}
-
-export function shouldPreserveFinalizedSnapshot(
-  finalizedSnapshot: FinalizedTurnSnapshotState | null,
-  confirmedTranscript: UiMessage[],
-): boolean {
-  if (!finalizedSnapshot) return false
-  const workedMessages = finalizedSnapshot.messages.filter((message) => isWorkedMessage(message) || message.messageType === 'toolCall' || message.messageType === 'commandExecution')
-  return workedMessages.some((message) => !confirmedTranscript.some((confirmed) => areMessageFieldsEqual(confirmed, message)))
 }
 
 export function omitKey<TValue>(record: Record<string, TValue>, key: string): Record<string, TValue> {

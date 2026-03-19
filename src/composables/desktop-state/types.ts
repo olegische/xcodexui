@@ -3,7 +3,6 @@ import type {
   ReasoningEffort,
   ThreadScrollState,
   UiFileAttachment,
-  UiMessage,
 } from '../../types/codex'
 
 export type FileAttachment = { label: string; path: string; fsPath: string }
@@ -58,11 +57,6 @@ export type LiveTextSegmentState = {
   segmentId: string
 }
 
-export type FinalizedTurnSnapshotState = {
-  turnId: string
-  messages: UiMessage[]
-}
-
 export type ChatPhase = 'idle' | 'live' | 'finalizing' | 'settled' | 'failed'
 
 export type LiveTurnEvent =
@@ -75,7 +69,6 @@ export type LedgerThreadState = {
   phase: ChatPhase
   confirmedTranscript: UiMessage[]
   liveEventLog: LiveTurnEvent[]
-  finalizedSnapshot: FinalizedTurnSnapshotState | null
   activeTurnId: string
   activeSegment: LiveTextSegmentState | null
   nextSegmentCount: number

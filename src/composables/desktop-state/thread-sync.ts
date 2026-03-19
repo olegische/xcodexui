@@ -26,8 +26,8 @@ export function createThreadSync(params: {
     messages: UiMessage[],
     options?: { inProgress?: boolean; preserveMissing?: boolean },
   ) => void
+  clearPendingTurnRequest: (threadId: string) => void
   clearLiveLedger: (threadId: string) => void
-  setFinalizedTurnSnapshotForThread: (threadId: string, snapshot: unknown | null) => void
   loadThreads: () => Promise<void>
   refreshModelPreferences: () => Promise<void>
   setSelectedThreadId: (threadId: string) => void
@@ -50,8 +50,8 @@ export function createThreadSync(params: {
     currentThreadVersion,
     markThreadAsRead,
     setConfirmedTranscriptForThread,
+    clearPendingTurnRequest,
     clearLiveLedger,
-    setFinalizedTurnSnapshotForThread,
     loadThreads,
     refreshModelPreferences,
     setSelectedThreadId,
@@ -72,8 +72,8 @@ export function createThreadSync(params: {
       const inProgress = readThreadInProgressFromResponse(payload)
       setConfirmedTranscriptForThread(threadId, nextMessages, { inProgress, preserveMissing: options.silent === true })
       if (!inProgress) {
+        clearPendingTurnRequest(threadId)
         clearLiveLedger(threadId)
-        setFinalizedTurnSnapshotForThread(threadId, null)
       }
       loadedMessagesByThreadId.value = { ...loadedMessagesByThreadId.value, [threadId]: true }
       const version = currentThreadVersion(threadId)

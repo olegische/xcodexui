@@ -1,15 +1,8 @@
 import type { Ref } from 'vue'
 import type { UiMessage } from '../../types/codex'
-import {
-  areMessageContentsEqual,
-  areMessageFieldsEqual,
-  mergeMessages,
-  projectLiveTurnEvents,
-  shouldPreserveFinalizedSnapshot,
-} from './message-helpers'
+import { mergeMessages } from './message-helpers'
 import type {
   ChatPhase,
-  FinalizedTurnSnapshotState,
   LedgerThreadState,
   LiveTextSegmentState,
   LiveTurnEvent,
@@ -20,7 +13,6 @@ export function defaultLedgerThreadState(): LedgerThreadState {
     phase: 'idle',
     confirmedTranscript: [],
     liveEventLog: [],
-    finalizedSnapshot: null,
     activeTurnId: '',
     activeSegment: null,
     nextSegmentCount: 0,
@@ -79,53 +71,10 @@ export function createDesktopLedger(params: {
         confirmedTranscript: mergedMessages,
         phase,
         liveEventLog: options.inProgress ? current.liveEventLog : [],
-        finalizedSnapshot:
-          options.inProgress || shouldPreserveFinalizedSnapshot(current.finalizedSnapshot, mergedMessages)
-            ? current.finalizedSnapshot
-            : null,
         activeTurnId: options.inProgress ? current.activeTurnId : '',
         activeSegment: options.inProgress ? current.activeSegment : null,
       }
     })
-  }
-
-  function setFinalizedTurnSnapshotForThread(
-    threadId: string,
-    snapshot: FinalizedTurnSnapshotState | null,
-    options: { forceClear?: boolean } = {},
-  ): void {
-    updateLedgerThreadState(threadId, (current) => ({
-      ...current,
-      phase: snapshot
-        ? 'finalizing'
-        : current.phase === 'finalizing'
-          ? 'settled'
-          : current.phase,
-      finalizedSnapshot: snapshot
-        ? snapshot
-        : (!options.forceClear && shouldPreserveFinalizedSnapshot(current.finalizedSnapshot, current.confirmedTranscript))
-            ? current.finalizedSnapshot
-            : null,
-      activeTurnId: snapshot ? current.activeTurnId : '',
-    }))
-  }
-
-  function buildFinalizedTurnSnapshot(
-    threadId: string,
-    turnId: string,
-    options: { extraMessages?: UiMessage[] } = {},
-  ): FinalizedTurnSnapshotState {
-    const ledger = getLedgerThreadState(threadId)
-    const liveMessages = projectLiveTurnEvents(ledger.liveEventLog)
-    const extraMessages = (options.extraMessages ?? []).filter((message) =>
-      !ledger.confirmedTranscript.some((confirmed) =>
-        areMessageFieldsEqual(confirmed, message) || areMessageContentsEqual(confirmed, message),
-      ),
-    )
-    return {
-      turnId,
-      messages: [...ledger.confirmedTranscript, ...extraMessages, ...liveMessages],
-    }
   }
 
   function clearActiveLiveTextSegment(threadId: string): void {
@@ -176,7 +125,6 @@ export function createDesktopLedger(params: {
       ...current,
       liveEventLog: [],
       activeSegment: null,
-      activeTurnId: current.activeTurnId,
     }))
   }
 
@@ -193,8 +141,6 @@ export function createDesktopLedger(params: {
     isThreadInProgress,
     updateLedgerThreadState,
     setConfirmedTranscriptForThread,
-    setFinalizedTurnSnapshotForThread,
-    buildFinalizedTurnSnapshot,
     clearActiveLiveTextSegment,
     appendLiveTextSegment,
     hasLiveTextSegmentsForItem,
