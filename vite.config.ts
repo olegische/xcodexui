@@ -58,9 +58,9 @@ const worktreeName = getWorktreeName();
 const appVersion = typeof pkg.version === "string" ? pkg.version : "unknown";
 const WS_UPGRADE_ATTACHED_KEY = "__codexBridgeWsAttached__";
 const projectRoot = dirname(fileURLToPath(import.meta.url));
-const browserCodexRoot = fileURLToPath(new URL("../browser-codex/codex-rs/wasm", import.meta.url));
-const browserCodexPkgRoot = fileURLToPath(new URL("../browser-codex/codex-rs/wasm/apps/webui/public/pkg", import.meta.url));
-const browserCodexXrouterRoot = fileURLToPath(new URL("../browser-codex/codex-rs/wasm/apps/webui/public/xrouter-browser", import.meta.url));
+const browserCodexRoot = fileURLToPath(new URL("../xcodex/codex-rs/wasm", import.meta.url));
+const browserCodexPkgRoot = fileURLToPath(new URL("../xcodex/codex-rs/wasm/apps/webui/public/pkg", import.meta.url));
+const browserCodexXrouterRoot = fileURLToPath(new URL("../xcodex/codex-rs/wasm/apps/webui/public/xrouter-browser", import.meta.url));
 
 function attachExternalStaticDir(
   urlPrefix: string,
@@ -342,12 +342,13 @@ export default defineConfig({
   ],
   resolve: {
     alias: {
-      "@browser-codex/wasm-browser-host": fileURLToPath(new URL("../browser-codex/codex-rs/wasm/ts/browser-host/src", import.meta.url)),
-      "@browser-codex/wasm-browser-codex-runtime": fileURLToPath(new URL("../browser-codex/codex-rs/wasm/ts/browser-codex-runtime/src", import.meta.url)),
-      "@browser-codex/wasm-browser-tools": fileURLToPath(new URL("../browser-codex/codex-rs/wasm/ts/browser-tools/src", import.meta.url)),
-      "@browser-codex/wasm-model-transport": fileURLToPath(new URL("../browser-codex/codex-rs/wasm/ts/model-transport/src", import.meta.url)),
-      "@browser-codex/wasm-runtime-client": fileURLToPath(new URL("../browser-codex/codex-rs/wasm/ts/runtime-client/src", import.meta.url)),
-      "@browser-codex/wasm-runtime-core": fileURLToPath(new URL("../browser-codex/codex-rs/wasm/ts/runtime-core/src", import.meta.url)),
+      "xcodex-runtime": fileURLToPath(new URL("../xcodex/codex-rs/wasm/ts/browser-runtime/dist", import.meta.url)),
+      "@browser-codex/wasm-browser-host": fileURLToPath(new URL("../xcodex/codex-rs/wasm/ts/browser-host/src", import.meta.url)),
+      "@browser-codex/wasm-browser-codex-runtime": fileURLToPath(new URL("../xcodex/codex-rs/wasm/ts/browser-codex-runtime/src", import.meta.url)),
+      "@browser-codex/wasm-browser-tools": fileURLToPath(new URL("../xcodex/codex-rs/wasm/ts/browser-tools/src", import.meta.url)),
+      "@browser-codex/wasm-model-transport": fileURLToPath(new URL("../xcodex/codex-rs/wasm/ts/model-transport/src", import.meta.url)),
+      "@browser-codex/wasm-runtime-client": fileURLToPath(new URL("../xcodex/codex-rs/wasm/ts/runtime-client/src", import.meta.url)),
+      "@browser-codex/wasm-runtime-core": fileURLToPath(new URL("../xcodex/codex-rs/wasm/ts/runtime-core/src", import.meta.url)),
     },
   },
 });

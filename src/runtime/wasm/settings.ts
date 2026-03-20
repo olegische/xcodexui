@@ -4,11 +4,13 @@ import {
   getActiveProvider,
   materializeCodexConfig,
   XROUTER_PROVIDER_OPTIONS,
-  type AuthState,
-  type CodexCompatibleConfig,
-  type DemoTransportMode,
-  type XrouterProvider,
-} from '@browser-codex/wasm-runtime-client'
+} from 'xcodex-runtime'
+import type {
+  AuthState,
+  CodexCompatibleConfig,
+  DemoTransportMode,
+  XrouterProvider,
+} from 'xcodex-runtime/types'
 import { getWasmRuntimeContext } from './runtime'
 import { loadStoredAuthState, loadStoredCodexConfig, saveStoredAuthState, saveStoredCodexConfig } from './storage'
 

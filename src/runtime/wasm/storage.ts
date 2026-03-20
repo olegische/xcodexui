@@ -1,15 +1,16 @@
 import {
-  createIndexedDbRuntimeStorage,
   DEFAULT_CODEX_CONFIG,
   normalizeCodexConfig,
-  PROVIDER_CONFIG_KEY,
-  USER_CONFIG_STORAGE_KEY,
-  type AuthState,
-  type CodexCompatibleConfig,
-} from '@browser-codex/wasm-runtime-client'
-import type { StoredThreadSession, StoredThreadSessionMetadata } from '@browser-codex/wasm-runtime-core'
+} from 'xcodex-runtime'
+import { createIndexedDbCodexStorage } from 'xcodex-runtime/storage'
+import type {
+  AuthState,
+  CodexCompatibleConfig,
+  StoredThreadSession,
+  StoredThreadSessionMetadata,
+} from 'xcodex-runtime/types'
 
-const storage = createIndexedDbRuntimeStorage<
+const storage = createIndexedDbCodexStorage<
   AuthState,
   CodexCompatibleConfig,
   StoredThreadSession,
@@ -21,8 +22,8 @@ const storage = createIndexedDbRuntimeStorage<
   normalizeConfig: normalizeCodexConfig,
   legacySessionStoreName: 'sessions',
   keys: {
-    providerConfig: PROVIDER_CONFIG_KEY,
-    userConfig: USER_CONFIG_STORAGE_KEY,
+    providerConfig: 'currentProviderConfig',
+    userConfig: 'currentUserConfig',
   },
   getSessionId(session) {
     return session.metadata.threadId

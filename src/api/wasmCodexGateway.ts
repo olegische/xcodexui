@@ -292,7 +292,7 @@ export async function listThreadsRaw(): Promise<ThreadListResponse> {
     sortKey: 'updated_at',
     sourceKinds: THREAD_LIST_SOURCE_KINDS,
   })
-  await Promise.all(payload.data.map(async (thread) => {
+  await Promise.all(payload.data.map(async (thread: unknown) => {
     await syncThreadIndexFromThread(thread)
   }))
   return payload
@@ -373,7 +373,7 @@ export async function setDefaultModel(model: string): Promise<void> {
 export async function getAvailableModelIds(): Promise<string[]> {
   const { runtime } = await getWasmRuntimeContext()
   const payload = await runtime.listModels({ cursor: null, limit: 200 })
-  return payload.data.map((row) => row.id).filter(Boolean)
+  return payload.data.map((row: { id: string }) => row.id).filter(Boolean)
 }
 
 export async function getCurrentModelConfig(): Promise<CurrentModelConfig> {

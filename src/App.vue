@@ -358,7 +358,7 @@ import {
   searchThreads,
 } from './api/codexGateway'
 import type { ReasoningEffort, ThreadScrollState } from './types/codex'
-import type { DemoTransportMode, XrouterProvider } from '@browser-codex/wasm-runtime-client'
+import type { DemoTransportMode, XrouterProvider } from 'xcodex-runtime/types'
 
 const SIDEBAR_COLLAPSED_STORAGE_KEY = 'codex-web-local.sidebar-collapsed.v1'
 const worktreeName = import.meta.env.VITE_WORKTREE_NAME ?? 'unknown'

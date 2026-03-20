@@ -14,7 +14,13 @@ Active local files:
 
 Direct external dependencies used by the active runtime:
 
-- `@browser-codex/wasm-browser-host/*`
+- `xcodex-runtime`
+- `xcodex-runtime/storage`
+- `xcodex-runtime/types`
+
+Indirect local dependencies still resolved underneath the facade:
+
+- `@browser-codex/wasm-browser-host`
 - `@browser-codex/wasm-browser-codex-runtime`
 - `@browser-codex/wasm-browser-tools`
 - `@browser-codex/wasm-runtime-client`

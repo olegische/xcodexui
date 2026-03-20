@@ -12,8 +12,8 @@ import { WebSocketServer, type WebSocket } from 'ws'
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const distDir = join(__dirname, '..', 'dist')
 const spaEntryFile = join(distDir, 'index.html')
-const browserCodexPkgDir = fileURLToPath(new URL('../../../browser-codex/codex-rs/wasm/apps/webui/public/pkg', import.meta.url))
-const browserCodexXrouterDir = fileURLToPath(new URL('../../../browser-codex/codex-rs/wasm/apps/webui/public/xrouter-browser', import.meta.url))
+const browserCodexPkgDir = fileURLToPath(new URL('../../../xcodex/codex-rs/wasm/apps/webui/public/pkg', import.meta.url))
+const browserCodexXrouterDir = fileURLToPath(new URL('../../../xcodex/codex-rs/wasm/apps/webui/public/xrouter-browser', import.meta.url))
 
 export type ServerOptions = {
   password?: string
