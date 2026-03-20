@@ -1,13 +1,13 @@
 import {
   createBrowserCodexRuntimeContext,
+  createIndexedDbCodexStorage,
+  createLocalStorageWorkspaceAdapter,
   DEFAULT_CODEX_CONFIG,
   DEFAULT_DEMO_INSTRUCTIONS,
   activeProviderApiKey,
   formatError,
   getActiveProvider,
 } from 'xcodex-runtime'
-import { createIndexedDbCodexStorage } from 'xcodex-runtime/storage'
-import { createLocalStorageWorkspaceAdapter } from 'xcodex-runtime/workspace'
 import type {
   AuthState,
   BrowserCodexProtocolClient,

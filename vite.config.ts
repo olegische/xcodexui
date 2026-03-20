@@ -300,14 +300,8 @@ export default defineConfig({
   ],
   resolve: {
     alias: {
-      "xcodex-runtime": fileURLToPath(new URL("../xcodex/codex-rs/wasm/ts/browser-runtime/dist", import.meta.url)),
-      "xcodex-runtime/workspace": fileURLToPath(new URL("../xcodex/codex-rs/wasm/ts/browser-runtime/src/workspace.ts", import.meta.url)),
-      "@browser-codex/wasm-browser-host": fileURLToPath(new URL("../xcodex/codex-rs/wasm/ts/browser-host/src", import.meta.url)),
-      "@browser-codex/wasm-browser-codex-runtime": fileURLToPath(new URL("../xcodex/codex-rs/wasm/ts/browser-codex-runtime/src", import.meta.url)),
-      "@browser-codex/wasm-browser-tools": fileURLToPath(new URL("../xcodex/codex-rs/wasm/ts/browser-tools/src", import.meta.url)),
-      "@browser-codex/wasm-model-transport": fileURLToPath(new URL("../xcodex/codex-rs/wasm/ts/model-transport/src", import.meta.url)),
-      "@browser-codex/wasm-runtime-client": fileURLToPath(new URL("../xcodex/codex-rs/wasm/ts/runtime-client/src", import.meta.url)),
-      "@browser-codex/wasm-runtime-core": fileURLToPath(new URL("../xcodex/codex-rs/wasm/ts/runtime-core/src", import.meta.url)),
+      "xcodex-runtime": fileURLToPath(new URL("./public/pkg/current/xcodex-runtime.js", import.meta.url)),
+      "xcodex-runtime/workspace": fileURLToPath(new URL("./public/pkg/current/xcodex-runtime.js", import.meta.url)),
     },
   },
 });

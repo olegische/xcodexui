@@ -1,13 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+TMP_DIR=""
+
 usage() {
   cat <<'EOF'
 Usage: prepare-wasm-runtime.sh
 
 Downloads and prepares:
-- xcodex-runtime SDK from the xcodex-wasm release tarball
-- browser wasm assets into public/pkg
+- xcodex wasm browser bundle into public/pkg
 - xrouter-browser assets into public/xrouter-browser
 
 Environment:
@@ -99,18 +100,14 @@ main() {
 
   local public_pkg_root="${project_root}/public/pkg"
   local public_xrouter_root="${project_root}/public/xrouter-browser"
-  local vendor_runtime_root="${project_root}/.vendor/xcodex-runtime/package"
-  local build_id
-  build_id="$(date -u +%Y%m%d%H%M%S)"
 
-  local tmp_dir
-  tmp_dir="$(mktemp -d)"
-  trap 'rm -rf "${tmp_dir}"' EXIT
+  TMP_DIR="$(mktemp -d)"
+  trap '[[ -n "${TMP_DIR:-}" ]] && rm -rf "${TMP_DIR}"' EXIT
 
-  local xcodex_tarball_path="${tmp_dir}/xcodex-wasm.tar.gz"
-  local xrouter_tarball_path="${tmp_dir}/xrouter-browser.tar.gz"
-  local xcodex_unpack_dir="${tmp_dir}/xcodex-wasm"
-  local xrouter_unpack_dir="${tmp_dir}/xrouter-browser"
+  local xcodex_tarball_path="${TMP_DIR}/xcodex-wasm.tar.gz"
+  local xrouter_tarball_path="${TMP_DIR}/xrouter-browser.tar.gz"
+  local xcodex_unpack_dir="${TMP_DIR}/xcodex-wasm"
+  local xrouter_unpack_dir="${TMP_DIR}/xrouter-browser"
 
   mkdir -p "${xcodex_unpack_dir}" "${xrouter_unpack_dir}" "${public_pkg_root}" "${public_xrouter_root}"
 
@@ -126,36 +123,44 @@ main() {
   echo "Extracting xrouter-browser tarball..."
   tar -xzf "${xrouter_tarball_path}" -C "${xrouter_unpack_dir}"
 
-  local runtime_pkg_dir wasm_pkg_dir xrouter_pkg_dir
-  runtime_pkg_dir="$(find_dir_with_files "${xcodex_unpack_dir}" package.json dist)"
-  wasm_pkg_dir="$(find_dir_with_files "${xcodex_unpack_dir}" codex_wasm_browser.js codex_wasm_browser_bg.wasm)"
+  local xcodex_bundle_dir xcodex_current_dir xrouter_pkg_dir
+  xcodex_bundle_dir="$(find_dir_with_files "${xcodex_unpack_dir}" manifest.json current)"
+  xcodex_current_dir="${xcodex_bundle_dir}/current"
   xrouter_pkg_dir="$(find_dir_with_files "${xrouter_unpack_dir}" xrouter_browser.js xrouter_browser_bg.wasm)"
 
-  python3 - "${runtime_pkg_dir}/package.json" <<'PY'
+  if [[ ! -f "${xcodex_bundle_dir}/manifest.json" ]]; then
+    echo "xcodex-wasm tarball does not contain manifest.json" >&2
+    exit 1
+  fi
+  if [[ ! -f "${xcodex_current_dir}/xcodex.js" || ! -f "${xcodex_current_dir}/xcodex_bg.wasm" ]]; then
+    echo "xcodex-wasm tarball does not contain expected runtime bundle files" >&2
+    exit 1
+  fi
+
+  echo "Installing wasm browser assets into public/pkg..."
+  rm -rf "${public_pkg_root}"
+  mkdir -p "${public_pkg_root}"
+  prepare_current_dir "${xcodex_current_dir}" "${public_pkg_root}"
+  python3 - "${xcodex_bundle_dir}/manifest.json" "${public_pkg_root}/manifest.json" <<'PY'
 import json
 import sys
 from pathlib import Path
 
-data = json.loads(Path(sys.argv[1]).read_text())
-if data.get("name") != "xcodex-runtime":
-    raise SystemExit("xcodex-wasm tarball does not contain xcodex-runtime package")
+source = Path(sys.argv[1])
+target = Path(sys.argv[2])
+manifest = json.loads(source.read_text())
+target.write_text(json.dumps({
+    "buildId": manifest.get("buildId", ""),
+    "entry": "/pkg/current/xcodex.js",
+    "wasm": "/pkg/current/xcodex_bg.wasm",
+    "runtime": "/pkg/current/xcodex-runtime.js",
+}, indent=2) + "\n")
 PY
-
-  echo "Installing xcodex-runtime package into .vendor..."
-  rm -rf "${vendor_runtime_root}"
-  mkdir -p "$(dirname "${vendor_runtime_root}")"
-  cp -R "${runtime_pkg_dir}" "${vendor_runtime_root}"
-
-  echo "Installing wasm browser assets into public/pkg..."
-  prepare_current_dir "${wasm_pkg_dir}" "${public_pkg_root}"
-  write_manifest \
-    "${public_pkg_root}/manifest.json" \
-    "${build_id}" \
-    "/pkg/current/codex_wasm_browser.js" \
-    "/pkg/current/codex_wasm_browser_bg.wasm"
 
   echo "Installing xrouter-browser assets into public/xrouter-browser..."
   prepare_current_dir "${xrouter_pkg_dir}" "${public_xrouter_root}"
+  local build_id
+  build_id="$(date -u +%Y%m%d%H%M%S)"
   write_manifest \
     "${public_xrouter_root}/manifest.json" \
     "${build_id}" \
@@ -163,7 +168,6 @@ PY
     "/xrouter-browser/current/xrouter_browser_bg.wasm"
 
   echo "Prepared wasm runtime artifacts:"
-  echo "  runtime sdk: ${vendor_runtime_root}"
   echo "  wasm manifest: ${public_pkg_root}/manifest.json"
   echo "  xrouter manifest: ${public_xrouter_root}/manifest.json"
 }

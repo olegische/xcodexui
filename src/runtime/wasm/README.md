@@ -7,24 +7,19 @@ The browser-hosted runtime in `xcodexui` is wired through two entry points:
 
 Active local files:
 
-- `runtime.ts`: builds the browser host and Codex runtime.
-- `storage.ts`: IndexedDB persistence for auth, config, user config, and thread sessions.
+- `runtime.ts`: builds the browser Codex runtime from the release bundle in `public/pkg/current/xcodex-runtime.js`.
+- `storage.ts`: IndexedDB persistence for auth, config, user config, and thread sessions via `xcodex-runtime`.
 - `threadIndex.ts`: lightweight thread listing/index used by the UI.
 - `settings.ts`: runtime settings draft/status/load/save helpers for the UI.
 
-Direct external dependencies used by the active runtime:
+Active runtime contract:
 
 - `xcodex-runtime`
-- `xcodex-runtime/storage`
 - `xcodex-runtime/types`
-
-Indirect local dependencies still resolved underneath the facade:
-
-- `@browser-codex/wasm-browser-host`
-- `@browser-codex/wasm-browser-codex-runtime`
-- `@browser-codex/wasm-browser-tools`
-- `@browser-codex/wasm-runtime-client`
-- `@browser-codex/wasm-runtime-core`
+- `/pkg/manifest.json`
+- `/pkg/current/*`
+- `/xrouter-browser/manifest.json`
+- `/xrouter-browser/current/*`
 
 Runtime web assets are expected locally under:
 
@@ -33,7 +28,7 @@ Runtime web assets are expected locally under:
 
 Populate them with:
 
-- `npm run prepare:wasm-assets`
+- `just wasm-runtime-pull`
 
 What is not used directly by `xcodexui`:
 

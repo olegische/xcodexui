@@ -1,8 +1,8 @@
 import {
   DEFAULT_CODEX_CONFIG,
+  createIndexedDbCodexStorage,
   normalizeCodexConfig,
 } from 'xcodex-runtime'
-import { createIndexedDbCodexStorage } from 'xcodex-runtime/storage'
 import type {
   AuthState,
   CodexCompatibleConfig,

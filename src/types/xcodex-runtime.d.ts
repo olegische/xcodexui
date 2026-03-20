@@ -1,19 +1,77 @@
 declare module 'xcodex-runtime' {
-  export {
-    DEFAULT_CODEX_CONFIG,
-    DEFAULT_DEMO_INSTRUCTIONS,
-    XROUTER_PROVIDER_OPTIONS,
-    activeProviderApiKey,
-    detectTransportMode,
-    formatError,
-    getActiveProvider,
-    materializeCodexConfig,
-    normalizeCodexConfig,
-  } from '@browser-codex/wasm-runtime-client'
+  export const DEFAULT_CODEX_CONFIG: import('xcodex-runtime/types').CodexCompatibleConfig
+  export const DEFAULT_DEMO_INSTRUCTIONS: import('xcodex-runtime/types').DemoInstructions
+  export const XROUTER_PROVIDER_OPTIONS: ReadonlyArray<{
+    value: import('xcodex-runtime/types').XrouterProvider
+    label: string
+    displayName: string
+    baseUrl: string
+  }>
+
+  export function activeProviderApiKey(
+    config: import('xcodex-runtime/types').CodexCompatibleConfig,
+  ): string
+
+  export function detectTransportMode(
+    config: import('xcodex-runtime/types').CodexCompatibleConfig,
+  ): import('xcodex-runtime/types').DemoTransportMode
+
+  export function formatError(error: unknown): string
+
+  export function getActiveProvider(
+    config: import('xcodex-runtime/types').CodexCompatibleConfig,
+  ): import('xcodex-runtime/types').CodexModelProviderConfig
+
+  export function materializeCodexConfig(params: {
+    transportMode: import('xcodex-runtime/types').DemoTransportMode
+    model: string
+    modelReasoningEffort: string | null
+    personality: string | null
+    displayName: string
+    baseUrl: string
+    apiKey: string
+    xrouterProvider: import('xcodex-runtime/types').XrouterProvider
+  }): import('xcodex-runtime/types').CodexCompatibleConfig
+
+  export function normalizeCodexConfig(
+    config: import('xcodex-runtime/types').CodexCompatibleConfig,
+  ): import('xcodex-runtime/types').CodexCompatibleConfig
 
   export function createBrowserCodexRuntimeContext(
     options: import('xcodex-runtime/types').CreateBrowserCodexRuntimeContextOptions,
   ): Promise<import('xcodex-runtime/types').BrowserRuntimeContext>
+
+  export function createIndexedDbCodexStorage<
+    TAuthState,
+    TConfig,
+    TSession,
+    TSessionMetadata,
+  >(
+    options: import('xcodex-runtime/types').CreateIndexedDbCodexStorageOptions<
+      TAuthState,
+      TConfig,
+      TSession,
+      TSessionMetadata
+    >,
+  ): import('xcodex-runtime/types').BrowserRuntimeStorage<
+    TAuthState,
+    TConfig,
+    TSession,
+    TSessionMetadata
+  >
+
+  export {
+    applyWorkspacePatch,
+    createBrowserWorkspaceAdapter,
+    createLocalStorageWorkspaceAdapter,
+    listWorkspaceDir,
+    loadStoredWorkspaceSnapshot,
+    normalizeWorkspaceDirectoryPath,
+    normalizeWorkspaceFilePath,
+    readWorkspaceFile,
+    saveStoredWorkspaceSnapshot,
+    searchWorkspace,
+  } from 'xcodex-runtime/workspace'
 }
 
 declare module 'xcodex-runtime/storage' {
@@ -116,27 +174,133 @@ declare module 'xcodex-runtime/workspace' {
 }
 
 declare module 'xcodex-runtime/types' {
-  export type {
-    AuthState,
-    Account,
-    CodexCompatibleConfig,
-    CodexModelProviderConfig,
-    DemoInstructions,
-    DemoTransportMode,
-    ModelPreset,
-    ProviderKind,
-    StoredUserConfig,
-    XrouterProvider,
-  } from '@browser-codex/wasm-runtime-client'
+  export type JsonPrimitive = string | number | boolean | null
+  export type JsonValue =
+    | JsonPrimitive
+    | JsonValue[]
+    | { [key: string]: JsonValue }
 
-  export type {
-    JsonValue,
-    StoredThreadSession,
-    StoredThreadSessionMetadata,
-  } from '@browser-codex/wasm-runtime-core/types'
+  export type AuthState = {
+    authMode: 'apiKey' | 'chatgpt' | 'chatgptAuthTokens'
+    openaiApiKey: string | null
+    accessToken: string | null
+    refreshToken: string | null
+    chatgptAccountId: string | null
+    chatgptPlanType: string | null
+    lastRefreshAt: number | null
+  }
 
-  export type BrowserCodexProtocolClient =
-    import('@browser-codex/wasm-browser-codex-runtime').BrowserCodexProtocolClient
+  export type Account = {
+    email: string | null
+    planType: string | null
+    chatgptAccountId: string | null
+    authMode: AuthState['authMode'] | null
+  }
+
+  export type DemoTransportMode = 'openai' | 'xrouter-browser' | 'openai-compatible'
+  export type XrouterProvider = 'deepseek' | 'openai' | 'openrouter' | 'zai'
+  export type ProviderKind = 'openai' | 'openai_compatible' | 'xrouter_browser'
+
+  export type CodexModelProviderConfig = {
+    name: string
+    baseUrl: string
+    envKey: string
+    providerKind: ProviderKind
+    wireApi: 'responses'
+    metadata?: {
+      xrouterProvider?: XrouterProvider | null
+    } | null
+  }
+
+  export type CodexCompatibleConfig = {
+    model: string
+    modelProvider: string
+    modelReasoningEffort: string | null
+    personality: string | null
+    modelProviders: Record<string, CodexModelProviderConfig>
+    env: Record<string, string>
+  }
+
+  export type ModelPreset = {
+    id: string
+    displayName: string
+    description?: string | null
+    isDefault: boolean
+    showInPicker: boolean
+    supportsApi: boolean
+  }
+
+  export type DemoInstructions = {
+    baseInstructions: string
+    agentsDirectory: string
+    agentsInstructions: string
+    skillName: string
+    skillPath: string
+    skillContents: string
+  }
+
+  export type StoredUserConfig = {
+    filePath: string
+    version: string
+    content: string
+  }
+
+  export type StoredThreadSessionMetadata = {
+    threadId: string
+    rolloutId: string
+    createdAt: number
+    updatedAt: number
+    archived: boolean
+    name: string | null
+    preview: string
+    cwd: string
+    modelProvider: string
+  }
+
+  export type StoredThreadSession = {
+    metadata: StoredThreadSessionMetadata
+    items: JsonValue[]
+  }
+
+  export type BrowserCodexProtocolClient = {
+    subscribeToNotifications(
+      listener: (notification: { method: string; params: unknown }) => void,
+    ): () => void
+    threadResume(request: {
+      threadId: string
+      persistExtendedHistory?: boolean
+    }): Promise<any>
+    threadList(request: {
+      archived?: boolean
+      limit?: number
+      sortKey?: string
+      sourceKinds?: string[]
+    }): Promise<any>
+    threadRead(request: {
+      threadId: string
+      includeTurns?: boolean
+    }): Promise<any>
+    threadRollback(request: {
+      threadId: string
+      numTurns: number
+    }): Promise<any>
+    threadStart(request: {
+      cwd: string
+      model: string | null
+      experimentalRawEvents?: boolean
+      persistExtendedHistory?: boolean
+    }): Promise<any>
+    turnStart(request: {
+      threadId: string
+      input: unknown[]
+      model: string | null
+      effort: string | null
+    }): Promise<any>
+    turnInterrupt(request: {
+      threadId: string
+      turnId: string
+    }): Promise<any>
+  }
 
   export type BrowserDynamicToolCatalogEntry = {
     toolName: string
