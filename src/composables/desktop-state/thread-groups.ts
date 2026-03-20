@@ -29,6 +29,22 @@ export function mergeProjectOrder(previousOrder: string[], incomingGroups: UiPro
   return areStringArraysEqual(previousOrder, nextOrder) ? previousOrder : nextOrder
 }
 
+export function reconcileProjectOrder(
+  previousOrder: string[],
+  incomingGroups: UiProjectGroup[],
+  options?: { keepMissing?: boolean },
+): string[] {
+  const incomingNames = incomingGroups.map((group) => group.projectName)
+  const keepMissing = options?.keepMissing ?? true
+  const nextOrder = keepMissing
+    ? [...new Set([...previousOrder, ...incomingNames])]
+    : [
+        ...previousOrder.filter((projectName) => incomingNames.includes(projectName)),
+        ...incomingNames.filter((projectName) => !previousOrder.includes(projectName)),
+      ]
+  return areStringArraysEqual(previousOrder, nextOrder) ? previousOrder : nextOrder
+}
+
 export function orderGroupsByProjectOrder(incoming: UiProjectGroup[], projectOrder: string[]): UiProjectGroup[] {
   const incomingByName = new Map(incoming.map((group) => [group.projectName, group]))
   const ordered = projectOrder.map((projectName) => incomingByName.get(projectName) ?? { projectName, threads: [] })

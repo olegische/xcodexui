@@ -1,4 +1,5 @@
 import type { Ref } from 'vue'
+import { IS_WASM_RUNTIME } from '../../config/runtime'
 import type { ThreadScrollState, UiProjectGroup, UiThread } from '../../types/codex'
 import {
   areStringArraysEqual,
@@ -8,6 +9,7 @@ import {
   mergeThreadGroups,
   orderGroupsByProjectOrder,
   pruneThreadStateMap,
+  reconcileProjectOrder,
   toOptimisticThreadTitle,
   toProjectName,
 } from './thread-groups'
@@ -159,7 +161,9 @@ export function createThreadListState(params: {
     try {
       const [groups] = await Promise.all([getThreadGroups(), loadThreadTitleCacheIfNeeded()])
       await hydrateWorkspaceRootsStateIfNeeded(groups)
-      const nextProjectOrder = mergeProjectOrder(projectOrder.value, groups)
+      const nextProjectOrder = reconcileProjectOrder(projectOrder.value, groups, {
+        keepMissing: !IS_WASM_RUNTIME,
+      })
       if (!areStringArraysEqual(projectOrder.value, nextProjectOrder)) {
         projectOrder.value = nextProjectOrder
         saveProjectOrder(projectOrder.value)
