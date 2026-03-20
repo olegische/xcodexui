@@ -7,6 +7,7 @@ import {
   getActiveProvider,
 } from 'xcodex-runtime'
 import { createIndexedDbCodexStorage } from 'xcodex-runtime/storage'
+import { createLocalStorageWorkspaceAdapter } from 'xcodex-runtime/workspace'
 import type {
   AuthState,
   BrowserCodexProtocolClient,
@@ -17,12 +18,6 @@ import type {
   StoredThreadSession,
   StoredThreadSessionMetadata,
 } from 'xcodex-runtime/types'
-import {
-  applyWorkspacePatch,
-  listWorkspaceDir,
-  readWorkspaceFile,
-  searchWorkspace,
-} from '@browser-codex/wasm-runtime-client'
 import type { RpcNotification } from '../../api/codexRpcClient'
 import { BROWSER_WORKSPACE_ROOT } from '../../config/runtime'
 
@@ -78,12 +73,9 @@ export async function getWasmRuntimeContext(): Promise<WasmRuntimeContext> {
     const context = await createBrowserCodexRuntimeContext({
       cwd: BROWSER_WORKSPACE_ROOT,
       storage,
-      workspace: {
-        readFile: readWorkspaceFile,
-        listDir: listWorkspaceDir,
-        search: searchWorkspace,
-        applyPatch: applyWorkspacePatch,
-      },
+      workspace: createLocalStorageWorkspaceAdapter({
+        rootPath: BROWSER_WORKSPACE_ROOT,
+      }),
       bootstrap: {
         baseInstructions: DEFAULT_DEMO_INSTRUCTIONS.baseInstructions,
         developerInstructions: null,

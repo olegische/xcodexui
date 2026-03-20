@@ -3,5 +3,8 @@ dist/
 dist-cli/
 output/
 *.tsbuildinfo
+public/pkg/
+public/xrouter-browser/
+.vendor/
 
 package-lock.json

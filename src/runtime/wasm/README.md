@@ -26,6 +26,15 @@ Indirect local dependencies still resolved underneath the facade:
 - `@browser-codex/wasm-runtime-client`
 - `@browser-codex/wasm-runtime-core`
 
+Runtime web assets are expected locally under:
+
+- `public/pkg`
+- `public/xrouter-browser`
+
+Populate them with:
+
+- `npm run prepare:wasm-assets`
+
 What is not used directly by `xcodexui`:
 
 - `src/integrations/xcodex/*`

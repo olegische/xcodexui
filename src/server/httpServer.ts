@@ -2,7 +2,7 @@ import { fileURLToPath } from 'node:url'
 import { dirname, extname, isAbsolute, join } from 'node:path'
 import type { Server as HttpServer, IncomingMessage } from 'node:http'
 import { createReadStream, existsSync } from 'node:fs'
-import { writeFile, stat } from 'node:fs/promises'
+import { stat, writeFile } from 'node:fs/promises'
 import express, { type Express } from 'express'
 import { createCodexBridgeMiddleware } from './codexAppServerBridge.js'
 import { createAuthSession } from './authMiddleware.js'
@@ -12,8 +12,6 @@ import { WebSocketServer, type WebSocket } from 'ws'
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const distDir = join(__dirname, '..', 'dist')
 const spaEntryFile = join(distDir, 'index.html')
-const browserCodexPkgDir = fileURLToPath(new URL('../../../xcodex/codex-rs/wasm/apps/webui/public/pkg', import.meta.url))
-const browserCodexXrouterDir = fileURLToPath(new URL('../../../xcodex/codex-rs/wasm/apps/webui/public/xrouter-browser', import.meta.url))
 
 export type ServerOptions = {
   password?: string
@@ -63,32 +61,6 @@ function readWildcardPathParam(value: unknown): string {
   if (typeof value === 'string') return value
   if (Array.isArray(value)) return value.join('/')
   return ''
-}
-
-function attachExternalStaticHandler(urlPrefix: string, rootDir: string) {
-  return async (req: express.Request, res: express.Response, next: express.NextFunction) => {
-    const url = new URL(req.url, 'http://localhost')
-    if (!(url.pathname === urlPrefix || url.pathname.startsWith(`${urlPrefix}/`))) {
-      next()
-      return
-    }
-    const relativePath = url.pathname.slice(urlPrefix.length).replace(/^\/+/, '')
-    const targetPath = join(rootDir, relativePath)
-    try {
-      const fileStat = await stat(targetPath)
-      if (!fileStat.isFile()) {
-        res.status(404).type('text/plain').send('Not found')
-        return
-      }
-      const contentType = STATIC_CONTENT_TYPES[extname(targetPath).toLowerCase()]
-      if (contentType) {
-        res.setHeader('Content-Type', contentType)
-      }
-      createReadStream(targetPath).pipe(res)
-    } catch {
-      res.status(404).type('text/plain').send('Not found')
-    }
-  }
 }
 
 export function createServer(options: ServerOptions = {}): ServerInstance {
@@ -215,8 +187,6 @@ export function createServer(options: ServerOptions = {}): ServerInstance {
   const hasFrontendAssets = existsSync(spaEntryFile)
 
   // 7. Static files from Vue build
-  app.use(attachExternalStaticHandler('/pkg', browserCodexPkgDir))
-  app.use(attachExternalStaticHandler('/xrouter-browser', browserCodexXrouterDir))
   if (hasFrontendAssets) {
     app.use(express.static(distDir))
   }

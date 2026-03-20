@@ -16,6 +16,7 @@
       "xcodex-runtime": ["../xcodex/codex-rs/wasm/ts/browser-runtime/dist/index.js"],
       "xcodex-runtime/config": ["../xcodex/codex-rs/wasm/ts/browser-runtime/dist/config.js"],
       "xcodex-runtime/storage": ["../xcodex/codex-rs/wasm/ts/browser-runtime/dist/storage.js"],
+      "xcodex-runtime/workspace": ["../xcodex/codex-rs/wasm/ts/browser-runtime/src/workspace.ts"],
       "xcodex-runtime/types": ["../xcodex/codex-rs/wasm/ts/browser-runtime/dist/types.js"],
       "@browser-codex/wasm-browser-host": ["../xcodex/codex-rs/wasm/ts/browser-host/src/index.ts"],
       "@browser-codex/wasm-browser-host/*": ["../xcodex/codex-rs/wasm/ts/browser-host/src/*"],

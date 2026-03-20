@@ -37,6 +37,84 @@ declare module 'xcodex-runtime/storage' {
   >
 }
 
+declare module 'xcodex-runtime/workspace' {
+  export type {
+    BrowserWorkspaceAdapter,
+    JsonValue,
+  } from 'xcodex-runtime/types'
+
+  export type WorkspaceFileRecord = {
+    path: string
+    content: string
+  }
+
+  export type WorkspaceSnapshot = {
+    rootPath: string
+    files: WorkspaceFileRecord[]
+  }
+
+  export type WorkspaceStorageLike = Pick<Storage, 'getItem' | 'setItem'>
+  export type WorkspaceEventTargetLike = Pick<EventTarget, 'dispatchEvent'>
+
+  export type LocalStorageWorkspaceAdapterOptions = {
+    rootPath?: string
+    storageKey?: string
+    storage?: WorkspaceStorageLike
+    eventTarget?: WorkspaceEventTargetLike
+  }
+
+  export const DEFAULT_WORKSPACE_ROOT: string
+  export const DEFAULT_WORKSPACE_STORAGE_KEY: string
+  export const WORKSPACE_CHANGED_EVENT: string
+
+  export function createLocalStorageWorkspaceAdapter(
+    options?: LocalStorageWorkspaceAdapterOptions,
+  ): import('xcodex-runtime/types').BrowserWorkspaceAdapter
+
+  export function createBrowserWorkspaceAdapter(
+    options?: LocalStorageWorkspaceAdapterOptions,
+  ): import('xcodex-runtime/types').BrowserWorkspaceAdapter
+
+  export function readWorkspaceFile(
+    request: import('xcodex-runtime/types').JsonValue,
+    options?: LocalStorageWorkspaceAdapterOptions,
+  ): Promise<import('xcodex-runtime/types').JsonValue>
+
+  export function listWorkspaceDir(
+    request: import('xcodex-runtime/types').JsonValue,
+    options?: LocalStorageWorkspaceAdapterOptions,
+  ): Promise<import('xcodex-runtime/types').JsonValue>
+
+  export function searchWorkspace(
+    request: import('xcodex-runtime/types').JsonValue,
+    options?: LocalStorageWorkspaceAdapterOptions,
+  ): Promise<import('xcodex-runtime/types').JsonValue>
+
+  export function applyWorkspacePatch(
+    request: import('xcodex-runtime/types').JsonValue,
+    options?: LocalStorageWorkspaceAdapterOptions,
+  ): Promise<import('xcodex-runtime/types').JsonValue>
+
+  export function loadStoredWorkspaceSnapshot(
+    options?: LocalStorageWorkspaceAdapterOptions,
+  ): Promise<WorkspaceSnapshot>
+
+  export function saveStoredWorkspaceSnapshot(
+    snapshot: WorkspaceSnapshot,
+    options?: LocalStorageWorkspaceAdapterOptions,
+  ): Promise<void>
+
+  export function normalizeWorkspaceFilePath(
+    path: string,
+    options?: Pick<LocalStorageWorkspaceAdapterOptions, 'rootPath'>,
+  ): string
+
+  export function normalizeWorkspaceDirectoryPath(
+    path: string,
+    options?: Pick<LocalStorageWorkspaceAdapterOptions, 'rootPath'>,
+  ): string
+}
+
 declare module 'xcodex-runtime/types' {
   export type {
     AuthState,

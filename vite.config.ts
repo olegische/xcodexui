@@ -58,46 +58,6 @@ const worktreeName = getWorktreeName();
 const appVersion = typeof pkg.version === "string" ? pkg.version : "unknown";
 const WS_UPGRADE_ATTACHED_KEY = "__codexBridgeWsAttached__";
 const projectRoot = dirname(fileURLToPath(import.meta.url));
-const browserCodexRoot = fileURLToPath(new URL("../xcodex/codex-rs/wasm", import.meta.url));
-const browserCodexPkgRoot = fileURLToPath(new URL("../xcodex/codex-rs/wasm/apps/webui/public/pkg", import.meta.url));
-const browserCodexXrouterRoot = fileURLToPath(new URL("../xcodex/codex-rs/wasm/apps/webui/public/xrouter-browser", import.meta.url));
-
-function attachExternalStaticDir(
-  urlPrefix: string,
-  rootDir: string,
-  req: { url?: string; method?: string },
-  res: any,
-  next: () => void,
-): void {
-  if (!req.url || (req.method !== "GET" && req.method !== "HEAD")) return next();
-  const url = new URL(req.url, "http://localhost");
-  if (!(url.pathname === urlPrefix || url.pathname.startsWith(`${urlPrefix}/`))) return next();
-  const relativePath = url.pathname.slice(urlPrefix.length).replace(/^\/+/, "");
-  const targetPath = relativePath ? `${rootDir}/${relativePath}` : `${rootDir}/index.html`;
-  void stat(targetPath)
-    .then((fileStat) => {
-      if (!fileStat.isFile()) {
-        res.statusCode = 404;
-        res.end("Not found");
-        return;
-      }
-      const contentType = STATIC_CONTENT_TYPES[extname(targetPath).toLowerCase()];
-      if (contentType) {
-        res.setHeader("Content-Type", contentType);
-      }
-      const stream = createReadStream(targetPath);
-      stream.on("error", () => {
-        if (res.headersSent) return;
-        res.statusCode = 404;
-        res.end("Not found");
-      });
-      stream.pipe(res);
-    })
-    .catch(() => {
-      res.statusCode = 404;
-      res.end("Not found");
-    });
-}
 
 export default defineConfig({
   define: {
@@ -109,7 +69,7 @@ export default defineConfig({
     port: 5173,
     allowedHosts: [".trycloudflare.com"],
     fs: {
-      allow: [projectRoot, browserCodexRoot],
+      allow: [projectRoot],
     },
     watch: {
       ignored: [
@@ -200,8 +160,6 @@ export default defineConfig({
           });
           stream.pipe(res);
         });
-        server.middlewares.use((req, res, next) => attachExternalStaticDir("/pkg", browserCodexPkgRoot, req, res, next));
-        server.middlewares.use((req, res, next) => attachExternalStaticDir("/xrouter-browser", browserCodexXrouterRoot, req, res, next));
         server.middlewares.use((req, res, next) => {
           if (!req.url || (req.method !== "GET" && req.method !== "HEAD")) return next();
           const url = new URL(req.url, "http://localhost");
@@ -343,6 +301,7 @@ export default defineConfig({
   resolve: {
     alias: {
       "xcodex-runtime": fileURLToPath(new URL("../xcodex/codex-rs/wasm/ts/browser-runtime/dist", import.meta.url)),
+      "xcodex-runtime/workspace": fileURLToPath(new URL("../xcodex/codex-rs/wasm/ts/browser-runtime/src/workspace.ts", import.meta.url)),
       "@browser-codex/wasm-browser-host": fileURLToPath(new URL("../xcodex/codex-rs/wasm/ts/browser-host/src", import.meta.url)),
       "@browser-codex/wasm-browser-codex-runtime": fileURLToPath(new URL("../xcodex/codex-rs/wasm/ts/browser-codex-runtime/src", import.meta.url)),
       "@browser-codex/wasm-browser-tools": fileURLToPath(new URL("../xcodex/codex-rs/wasm/ts/browser-tools/src", import.meta.url)),

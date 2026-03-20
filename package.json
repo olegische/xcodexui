@@ -32,6 +32,8 @@
     "dist-cli/"
   ],
   "scripts": {
+    "prepare:wasm-assets": "node scripts/prepare-wasm-assets.mjs",
+    "prepare:runtime-sdk": "node scripts/prepare-runtime-sdk.mjs",
     "dev": "vite",
     "build:frontend": "vue-tsc --noEmit && vite build",
     "build:cli": "tsup",
