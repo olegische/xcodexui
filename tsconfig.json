@@ -13,10 +13,10 @@
     "types": ["vite/client", "node"],
     "baseUrl": ".",
     "paths": {
-      "xcodex-runtime": ["public/pkg/current/xcodex-runtime.js"],
-      "xcodex-runtime/config": ["public/pkg/current/xcodex-runtime.js"],
-      "xcodex-runtime/workspace": ["public/pkg/current/xcodex-runtime.js"],
-      "xcodex-runtime/types": ["public/pkg/current/xcodex.d.ts"]
+      "xcodex-runtime": [".vendor/xcodex-runtime/xcodex-runtime.js"],
+      "xcodex-runtime/config": [".vendor/xcodex-runtime/xcodex-runtime.js"],
+      "xcodex-runtime/workspace": [".vendor/xcodex-runtime/xcodex-runtime.js"],
+      "xcodex-runtime/types": [".vendor/xcodex-runtime/xcodex.d.ts"]
     }
   },
   "include": ["src/**/*.ts", "src/**/*.vue", "vite.config.ts"]

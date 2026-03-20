@@ -300,8 +300,8 @@ export default defineConfig({
   ],
   resolve: {
     alias: {
-      "xcodex-runtime": fileURLToPath(new URL("./public/pkg/current/xcodex-runtime.js", import.meta.url)),
-      "xcodex-runtime/workspace": fileURLToPath(new URL("./public/pkg/current/xcodex-runtime.js", import.meta.url)),
+      "xcodex-runtime": fileURLToPath(new URL("./.vendor/xcodex-runtime/xcodex-runtime.js", import.meta.url)),
+      "xcodex-runtime/workspace": fileURLToPath(new URL("./.vendor/xcodex-runtime/xcodex-runtime.js", import.meta.url)),
     },
   },
 });

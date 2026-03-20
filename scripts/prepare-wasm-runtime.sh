@@ -10,6 +10,7 @@ Usage: prepare-wasm-runtime.sh
 Downloads and prepares:
 - xcodex wasm browser bundle into public/pkg
 - xrouter-browser assets into public/xrouter-browser
+- xcodex runtime import bundle into .vendor/xcodex-runtime
 
 Environment:
   XCODEX_WASM_TARBALL      Optional. Defaults to the public xcodex-wasm release tarball.
@@ -100,6 +101,7 @@ main() {
 
   local public_pkg_root="${project_root}/public/pkg"
   local public_xrouter_root="${project_root}/public/xrouter-browser"
+  local vendor_runtime_root="${project_root}/.vendor/xcodex-runtime"
 
   TMP_DIR="$(mktemp -d)"
   trap '[[ -n "${TMP_DIR:-}" ]] && rm -rf "${TMP_DIR}"' EXIT
@@ -109,7 +111,7 @@ main() {
   local xcodex_unpack_dir="${TMP_DIR}/xcodex-wasm"
   local xrouter_unpack_dir="${TMP_DIR}/xrouter-browser"
 
-  mkdir -p "${xcodex_unpack_dir}" "${xrouter_unpack_dir}" "${public_pkg_root}" "${public_xrouter_root}"
+  mkdir -p "${xcodex_unpack_dir}" "${xrouter_unpack_dir}" "${public_pkg_root}" "${public_xrouter_root}" "${vendor_runtime_root}"
 
   echo "Downloading xcodex-wasm tarball..."
   download_if_url "${xcodex_wasm_tarball}" "${xcodex_tarball_path}"
@@ -157,6 +159,17 @@ target.write_text(json.dumps({
 }, indent=2) + "\n")
 PY
 
+  echo "Installing xcodex runtime import bundle into .vendor/xcodex-runtime..."
+  rm -rf "${vendor_runtime_root}"
+  mkdir -p "${vendor_runtime_root}"
+  cp "${xcodex_current_dir}/xcodex-runtime.js" "${vendor_runtime_root}/xcodex-runtime.js"
+  if [[ -f "${xcodex_current_dir}/xcodex-runtime.js.map" ]]; then
+    cp "${xcodex_current_dir}/xcodex-runtime.js.map" "${vendor_runtime_root}/xcodex-runtime.js.map"
+  fi
+  if [[ -f "${xcodex_current_dir}/xcodex.d.ts" ]]; then
+    cp "${xcodex_current_dir}/xcodex.d.ts" "${vendor_runtime_root}/xcodex.d.ts"
+  fi
+
   echo "Installing xrouter-browser assets into public/xrouter-browser..."
   prepare_current_dir "${xrouter_pkg_dir}" "${public_xrouter_root}"
   local build_id
@@ -169,6 +182,7 @@ PY
 
   echo "Prepared wasm runtime artifacts:"
   echo "  wasm manifest: ${public_pkg_root}/manifest.json"
+  echo "  runtime import bundle: ${vendor_runtime_root}/xcodex-runtime.js"
   echo "  xrouter manifest: ${public_xrouter_root}/manifest.json"
 }
 
