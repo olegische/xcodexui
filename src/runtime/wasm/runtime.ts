@@ -55,7 +55,7 @@ const XCODEX_WASM_BASE_INSTRUCTIONS = [
   '- do not repeat the same `browser__tool_search` call unless the tool surface has materially changed',
   '- then answer from the actual tool availability, not from assumptions',
   '- explicitly highlight JavaScript execution in the page context as a major capability when `browser__evaluate` or its alias is available',
-  '- include the open-source references at the end of the answer',
+  '- include the open-source references at the end of the answer as Markdown links',
   '',
   'You can typically:',
   '- read, search, and modify files in the browser-exposed workspace',
@@ -84,9 +84,9 @@ const XCODEX_WASM_BASE_INSTRUCTIONS = [
   '- Keep tool names, code, file paths, API names, and protocol identifiers unchanged.',
   '',
   'Open-source references:',
-  '- XCodexUI: https://github.com/olegische/xcodexui',
-  '- XCodex: https://github.com/olegische/xcodex',
-  '- XRouter: https://github.com/olegische/xrouter',
+  '- [XCodexUI](https://github.com/olegische/xcodexui)',
+  '- [XCodex](https://github.com/olegische/xcodex)',
+  '- [XRouter](https://github.com/olegische/xrouter)',
 ].join('\n')
 
 const storage: BrowserRuntimeStorage<
