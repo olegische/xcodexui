@@ -369,7 +369,41 @@ export function normalizeThreadMessagesV2(payload: ThreadReadResponse): UiMessag
       }
     }
   }
-  return messages
+  return dedupeAdjacentUserMessages(messages)
+}
+
+function sameStringArray(left: string[] | undefined, right: string[] | undefined): boolean {
+  const a = left ?? []
+  const b = right ?? []
+  return a.length === b.length && a.every((value, index) => value === b[index])
+}
+
+function sameFileAttachments(
+  left: UiFileAttachment[] | undefined,
+  right: UiFileAttachment[] | undefined,
+): boolean {
+  const a = left ?? []
+  const b = right ?? []
+  return a.length === b.length && a.every((file, index) =>
+    file.label === b[index]?.label && file.path === b[index]?.path)
+}
+
+function isDuplicateAdjacentUserMessage(previous: UiMessage | undefined, current: UiMessage): boolean {
+  if (!previous || previous.role !== 'user' || current.role !== 'user') return false
+  if (previous.turnIndex !== current.turnIndex) return false
+  if (previous.text !== current.text) return false
+  if (!sameStringArray(previous.images, current.images)) return false
+  if (!sameFileAttachments(previous.fileAttachments, current.fileAttachments)) return false
+  return previous.messageType === 'userMessage' && current.messageType === 'userMessage'
+}
+
+function dedupeAdjacentUserMessages(messages: UiMessage[]): UiMessage[] {
+  const deduped: UiMessage[] = []
+  for (const message of messages) {
+    if (isDuplicateAdjacentUserMessage(deduped.at(-1), message)) continue
+    deduped.push(message)
+  }
+  return deduped
 }
 
 export function readThreadInProgressFromResponse(payload: ThreadReadResponse): boolean {
