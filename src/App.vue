@@ -746,7 +746,10 @@ async function refreshWasmRuntimeModelOptions(draft = wasmSettingsDraft.value): 
 function onWasmTransportModeChange(mode: DemoTransportMode): void {
   void (async () => {
     const nextDraft = await applyStoredWasmTransportDefaults(wasmSettingsDraft.value, mode)
-    wasmSettingsDraft.value = nextDraft
+    wasmSettingsDraft.value = {
+      ...nextDraft,
+      model: runtimeModelAllowsManualInput.value ? '' : nextDraft.model,
+    }
     hasStoredWasmProviderSecret.value = await hasStoredWasmProviderConfig({
       transportMode: nextDraft.transportMode,
       xrouterProvider: nextDraft.xrouterProvider,
@@ -757,7 +760,13 @@ function onWasmTransportModeChange(mode: DemoTransportMode): void {
 function onWasmXrouterProviderChange(provider: XrouterProvider): void {
   void (async () => {
     const nextDraft = await applyStoredWasmXrouterProvider(wasmSettingsDraft.value, provider)
-    wasmSettingsDraft.value = nextDraft
+    const allowsManualInput =
+      nextDraft.transportMode === 'openai-compatible'
+      || (nextDraft.transportMode === 'xrouter-browser' && nextDraft.xrouterProvider === 'openai')
+    wasmSettingsDraft.value = {
+      ...nextDraft,
+      model: allowsManualInput ? '' : nextDraft.model,
+    }
     hasStoredWasmProviderSecret.value = await hasStoredWasmProviderConfig({
       transportMode: nextDraft.transportMode,
       xrouterProvider: nextDraft.xrouterProvider,
