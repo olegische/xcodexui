@@ -274,7 +274,7 @@ export async function deleteStoredWasmProviderConfig(
         }
       : authState
 
-  if (shouldClearOpenAiFallback) {
+  if (shouldClearOpenAiFallback && nextAuthState) {
     await saveStoredAuthState(nextAuthState)
   }
 
