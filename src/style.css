@@ -256,7 +256,7 @@
 }
 
 :root.dark .settings-chip.is-error {
-  @apply bg-[#fb4934] text-white;
+  @apply bg-[#d65d0e] text-white;
 }
 
 :root.dark .settings-select,

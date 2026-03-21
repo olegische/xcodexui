@@ -1522,7 +1522,7 @@ async function submitFirstMessageForNewThread(
 }
 
 .settings-chip.is-error {
-  @apply bg-[#fb4934] text-white;
+  @apply bg-[#d65d0e] text-white;
 }
 
 .settings-select,
