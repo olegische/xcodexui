@@ -219,6 +219,12 @@ After each feature implementation session that uses this skill:
 - App-server RPC for rename uses method `thread/name/set` with params `{ threadId, name }` (not `threadName`).
 - `thread/name/updated` realtime notification carries `{ threadId, threadName }`, so parity implementations should handle both request/response naming differences (`name` on write, `threadName` on notification).
 
+## Findings: WASM Thread Persistence (2026-03-21)
+
+- In wasm mode, UI-side thread index (`xcodexui-wasm`) can diverge from runtime session storage (`codex-wasm-browser-terminal`) if thread summaries only expose `preview` and omit `name`.
+- Preserve an existing renamed UI title when syncing a wasm thread summary that has no `name`; otherwise a reload can overwrite the renamed title with the original preview text.
+- A full page reload destroys the in-memory wasm runtime. Persisted transcripts may still report an `inProgress` tail after reload even when there is no live turn left to resume in-page, so the UI should avoid treating that restored tail as an active live session unless there is local pending/live state to back it.
+
 ## Findings: Thread Title Parity In Wasm (2026-03-21)
 
 - Upstream local and wasm app-server both treat the first user message as the default thread label source via `thread.preview`; `thread/start` begins with empty `preview` and empty `name`.

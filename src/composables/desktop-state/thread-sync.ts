@@ -97,7 +97,15 @@ export function createThreadSync(params: {
       const pending = pendingTurnRequestByThreadId.value[threadId]
       const hasCanonicalPendingUser = matchesPendingUserMessage(nextMessages, pending)
       const hasLedgerActiveTurn = getLedgerThreadState(threadId).activeTurnId.trim().length > 0
+      // A page reload tears down the in-memory wasm runtime. If the restored transcript still
+      // ends with an in-progress turn but there is no local pending request or live ledger state,
+      // treat it as a recovered partial transcript instead of keeping the UI stuck in live mode.
+      const hasOrphanedPersistedTurn = IS_WASM_RUNTIME
+        && inProgress
+        && !hasLedgerActiveTurn
+        && !pending
       const shouldTreatAsInProgress = inProgress
+        && !hasOrphanedPersistedTurn
         || (IS_WASM_RUNTIME && hasLedgerActiveTurn)
         || (IS_WASM_RUNTIME && Boolean(pending) && !hasCanonicalPendingUser)
 

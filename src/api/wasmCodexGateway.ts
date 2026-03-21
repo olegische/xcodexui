@@ -399,7 +399,7 @@ function pickPreviewAndTitle(
   const preservedTitle = current?.title?.trim() ?? ''
   return {
     preview: preview || current?.lastPreview || '',
-    title: name || preview || preservedTitle,
+    title: name || preservedTitle || preview,
   }
 }
 
@@ -534,8 +534,13 @@ export async function archiveThread(threadId: string): Promise<void> {
 }
 
 export async function renameThread(threadId: string, threadName: string): Promise<void> {
+  const normalizedName = threadName.trim() || 'Untitled thread'
+  await callWasmRpc('thread/name/set', {
+    threadId,
+    name: normalizedName,
+  })
   await patchIndexedThread(threadId, {
-    title: threadName.trim() || 'Untitled thread',
+    title: normalizedName,
     updatedAtIso: new Date().toISOString(),
   })
 }
