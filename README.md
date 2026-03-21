@@ -130,7 +130,11 @@ Tool availability depends on runtime mode.
 
 ### WASM mode
 
-The current wasm path has a small, explicit browser-tool surface. From the code, the built-in browser tool names recognized in persisted/runtime tool events are:
+The current wasm path has a small, explicit browser-tool surface.
+
+#### Browser tools
+
+From the current wasm gateway implementation, the built-in browser tool names recognized in persisted/runtime tool events are:
 
 - `read_file`
 - `list_dir`
@@ -140,6 +144,15 @@ The current wasm path has a small, explicit browser-tool surface. From the code,
 - `request_user_input`
 
 These are the tools that are explicitly treated as browser built-ins in the current wasm gateway implementation.
+
+Practical meaning:
+
+- `read_file`, `list_dir`, `grep_files` cover read-oriented workspace inspection
+- `apply_patch` covers structured file edits
+- `update_plan` covers checklist / task-plan updates
+- `request_user_input` covers explicit user-input requests during tool flows
+
+This browser tool surface is materially narrower than the server-mode tool surface and should be documented as such.
 
 ### Server mode
 
