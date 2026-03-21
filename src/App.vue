@@ -262,6 +262,15 @@
                   <strong class="worktree-init-status-title">{{ worktreeInitStatus.title }}</strong>
                   <span class="worktree-init-status-message">{{ worktreeInitStatus.message }}</span>
                 </div>
+                <div v-if="showWasmRuntimeSetupCta" class="wasm-runtime-setup-card">
+                  <div class="wasm-runtime-setup-copy">
+                    <strong class="wasm-runtime-setup-title">{{ wasmRuntimeStatus.label }}</strong>
+                    <p class="wasm-runtime-setup-description">{{ wasmRuntimeStatus.detail }}</p>
+                  </div>
+                  <button class="wasm-runtime-setup-action" type="button" @click="openRuntimeSettings">
+                    Open runtime settings
+                  </button>
+                </div>
               </div>
 
                 <ThreadComposer :active-thread-id="composerThreadContextId"
@@ -272,6 +281,7 @@
                 :enable-file-mentions="!isWasmRuntime"
                 :enable-attachments="!isWasmRuntime"
                 :enable-dictation="!isWasmRuntime"
+                :disabled="showWasmRuntimeSetupCta"
                 :is-turn-in-progress="false"
                 :is-interrupting-turn="false" :send-with-enter="sendWithEnter" :in-progress-submit-mode="inProgressSendMode" @submit="onSubmitThreadMessage"
                 @update:selected-model="onSelectModel" @update:selected-reasoning-effort="onSelectReasoningEffort" />
@@ -528,6 +538,11 @@ const derivedRuntimeStatus = computed(() =>
     model: wasmSettingsDraft.value.model,
   }),
 )
+const showWasmRuntimeSetupCta = computed(() =>
+  isWasmRuntime
+  && isHomeRoute.value
+  && wasmRuntimeStatus.value.isError,
+)
 const composerCwd = computed(() => {
   if (isHomeRoute.value) return newThreadCwd.value.trim()
   return selectedThread.value?.cwd?.trim() ?? ''
@@ -642,6 +657,15 @@ watch(
 
 watch(
   () => isRuntimeSettingsRoute.value,
+  (active) => {
+    if (active && isWasmRuntime) {
+      void refreshWasmRuntimeSettings()
+    }
+  },
+)
+
+watch(
+  () => isHomeRoute.value,
   (active) => {
     if (active && isWasmRuntime) {
       void refreshWasmRuntimeSettings()
@@ -1475,6 +1499,26 @@ async function submitFirstMessageForNewThread(
 
 .worktree-init-status-message {
   @apply break-all;
+}
+
+.wasm-runtime-setup-card {
+  @apply mt-4 flex w-full max-w-xl items-center justify-between gap-4 rounded-2xl border border-amber-500/30 bg-amber-500/10 px-4 py-3;
+}
+
+.wasm-runtime-setup-copy {
+  @apply flex min-w-0 flex-1 flex-col gap-1;
+}
+
+.wasm-runtime-setup-title {
+  @apply text-sm font-semibold text-amber-100;
+}
+
+.wasm-runtime-setup-description {
+  @apply m-0 text-sm text-amber-50/80;
+}
+
+.wasm-runtime-setup-action {
+  @apply inline-flex shrink-0 items-center rounded-full border border-amber-200/30 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-950 transition hover:bg-white cursor-pointer;
 }
 
 .sidebar-settings-area {
