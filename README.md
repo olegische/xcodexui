@@ -15,6 +15,11 @@ This repository should be understood as a wasm-first Codex UI with a secondary l
 
 `XCodexUI` is a Vue-based Codex UI that can run in two different backend configurations.
 
+Related upstream repositories:
+
+- [`xcodex`](https://github.com/olegische/xcodex)
+- [`xrouter`](https://github.com/olegische/xrouter)
+
 ### 1. WASM mode
 
 The browser UI talks to a browser-hosted Codex runtime instead of an external app-server.
@@ -233,6 +238,11 @@ The wasm asset preparation script downloads and installs:
 - `xcodex` wasm browser bundle into `public/pkg`
 - `xrouter-browser` assets into `public/xrouter-browser`
 - runtime import bundle into `.vendor/xcodex-runtime`
+
+Upstream sources:
+
+- [`xcodex`](https://github.com/olegische/xcodex)
+- [`xrouter`](https://github.com/olegische/xrouter)
 
 ### Standard development UI
 
