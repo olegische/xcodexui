@@ -734,6 +734,16 @@ watch(
     }
   },
 )
+
+watch(
+  () => props.isTurnInProgress,
+  (isInProgress, wasInProgress) => {
+    if (!wasInProgress || isInProgress) return
+    if (isInteractionDisabled.value) return
+    if (!props.activeThreadId) return
+    nextTick(() => inputRef.value?.focus())
+  },
+)
 </script>
 
 <style scoped>
