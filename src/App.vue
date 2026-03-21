@@ -157,7 +157,7 @@
                       @change="onWasmTransportModeChange(wasmSettingsDraft.transportMode)"
                     >
                       <option value="xrouter-browser">Browser runtime router</option>
-                      <option value="openai">OpenAI</option>
+                      <option value="openai">OpenAI-compatible</option>
                       <option value="openai-compatible">Responses API-compatible</option>
                     </select>
                   </label>
