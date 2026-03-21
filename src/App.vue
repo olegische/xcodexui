@@ -217,7 +217,7 @@
                     Reload
                   </button>
                   <button class="settings-danger-action" type="button" :disabled="isSavingWasmSettings" @click="deleteCurrentWasmProviderConfig">
-                    Delete saved provider config
+                    Delete config
                   </button>
                 </div>
 
@@ -1505,7 +1505,7 @@ async function submitFirstMessageForNewThread(
 }
 
 .settings-chip.is-error {
-  @apply bg-red-700;
+  @apply bg-[#fb4934] text-white;
 }
 
 .settings-select,
@@ -1540,7 +1540,7 @@ async function submitFirstMessageForNewThread(
 }
 
 .settings-danger-action {
-  @apply rounded-[1rem] border border-red-200 bg-red-50 px-3 py-2 text-[0.82rem] font-medium text-red-700 transition hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-60;
+  @apply rounded-[1rem] border border-[#fb4934] bg-[#fb4934] px-3 py-2 text-[0.82rem] font-medium text-white transition hover:border-[#f03f2a] hover:bg-[#f03f2a] disabled:cursor-not-allowed disabled:opacity-60;
 }
 
 .settings-inline-note {
