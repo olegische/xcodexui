@@ -30,35 +30,30 @@
 ## Completion Verification Requirement (MANDATORY)
 
 - **ALWAYS test UI/behavior changes before reporting completion.** Never skip this step.
-- After completing a task that changes behavior or UI, run a Playwright verification in headless mode.
-- Start the dev server (`npm run dev`) if not already running, then open the page with Playwright CLI.
+- After completing a task that changes behavior or UI, run a verification with `chrome devtools`.
+- Start the dev server (`npm run dev`) if not already running, then open the page with `chrome devtools`.
 - For responsive/mobile changes, use `resize <w> <h>` to test at mobile (375x812) and tablet (768x1024) viewports.
-- Before taking any screenshot, wait a few seconds to ensure the UI has fully loaded.
-- Always capture a screenshot of the changed result and display that screenshot in chat when reporting completion.
 - If the dev server fails to start due to pre-existing errors, fix them first or work around them before testing.
 
-## Browser Automation: Prefer Playwright CLI Over Cursor Browser Tool
+## Browser Automation: Prefer Chrome DevTools
 
-- For all browser interactions (navigation, clicking, typing, screenshots, snapshots), prefer the Playwright CLI skill in headless mode over the Cursor IDE browser MCP tool.
-- Playwright CLI is faster, more reliable, and works in headless environments without a desktop.
-- Use headless mode by default; only add `--headed` when a live visual check is explicitly needed.
-- Skill location: `~/.codex/skills/playwright/SKILL.md` (wrapper script: `~/.codex/skills/playwright/scripts/playwright_cli.sh`).
+- For all browser interactions (navigation, clicking, typing, screenshots, snapshots), prefer `chrome devtools`.
+- Use the live page state from `chrome devtools` as the default verification path unless the user explicitly asks for another browser automation tool.
 
 ## NPX Testing Rule
 
 - For any `npx` package behavior test, **publish first**, then test the published `@latest` package.
 - Do not rely on local unpublished changes when validating `npx` behavior.
 - Run `npx` validation on the Oracle host (not local machine) unless user explicitly asks otherwise.
-- For Playwright verification of `npx` behavior, use the Oracle host Tailscale URL (for example `http://100.127.77.25:<port>`) instead of `localhost`.
+- For `chrome devtools` verification of `npx` behavior, use the Oracle host Tailscale URL (for example `http://100.127.77.25:<port>`) instead of `localhost`.
 
-## A1 Playwright Verification (From Mac via Tailscale)
+## A1 Chrome DevTools Verification (From Mac via Tailscale)
 
 - Use this flow when validating UI behavior on Oracle A1 from the local Mac machine.
 - On A1, start the app server with Codex CLI available in `PATH`:
   - `export PATH="$HOME/.npm-global/bin:$PATH"`
   - `npm run dev -- --host 0.0.0.0 --port 4173`
-- From Mac, run Playwright against Tailscale URL (`http://100.127.77.25:4173`), not localhost.
+- From Mac, open the Tailscale URL (`http://100.127.77.25:4173`) with `chrome devtools`, not localhost.
 - Verify success with both checks:
-  - UI assertion in Playwright (new project/folder appears in sidebar or selector).
+  - UI assertion in `chrome devtools` (new project/folder appears in sidebar or selector).
   - Filesystem assertion on A1 (`test -d /home/ubuntu/<project-name>`).
-- Save screenshot artifact under `output/playwright/` and include it in the report.
