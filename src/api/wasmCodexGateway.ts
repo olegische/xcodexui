@@ -133,6 +133,10 @@ function asRecord(value: unknown): Record<string, unknown> | null {
     : null
 }
 
+function isBootstrapEnvironmentContextText(value: string): boolean {
+  return /^<environment_context>\s*[\s\S]*<\/environment_context>$/u.test(value.trim())
+}
+
 function toStoredSessionPayload(session: NonNullable<StoredSession>): ThreadReadResponse {
   const turns: Array<{
     id: string
@@ -152,6 +156,8 @@ function toStoredSessionPayload(session: NonNullable<StoredSession>): ThreadRead
     turns.push(currentTurn)
   }
 
+  let currentTurnHasUserMessage = false
+
   session?.items.forEach((item, index) => {
     const record = asRecord(item)
     if (!record) return
@@ -161,9 +167,22 @@ function toStoredSessionPayload(session: NonNullable<StoredSession>): ThreadRead
         ? payload.turn_id
         : `${session.metadata.threadId}:turn:${turns.length}`
       pushTurn(turnId)
+      currentTurnHasUserMessage = false
       return
     }
     const payload = asRecord(record.payload)
+    if (record.type === 'event_msg' && payload?.type === 'user_message') {
+      const text = typeof payload.message === 'string' ? payload.message.trim() : ''
+      if (!text) return
+      if (!currentTurn) pushTurn(`${session.metadata.threadId}:turn:0`)
+      currentTurn?.items.push({
+        id: `${session.metadata.threadId}:stored:user-event:${index}`,
+        type: 'userMessage',
+        content: [{ type: 'text', text, text_elements: [] }],
+      })
+      currentTurnHasUserMessage = true
+      return
+    }
     if (record.type !== 'response_item' || payload?.type !== 'message') return
     if (!currentTurn) pushTurn(`${session.metadata.threadId}:turn:0`)
     const messagePayload = payload as {
@@ -172,17 +191,19 @@ function toStoredSessionPayload(session: NonNullable<StoredSession>): ThreadRead
     }
     const content = Array.isArray(messagePayload.content) ? messagePayload.content : []
     if (messagePayload.role === 'user') {
+      if (currentTurnHasUserMessage) return
       const text = content
         .filter((part) => part.type === 'input_text' && typeof part.text === 'string')
         .map((part) => String(part.text))
         .join('\n')
         .trim()
-      if (!text) return
+      if (!text || isBootstrapEnvironmentContextText(text)) return
       currentTurn?.items.push({
         id: `${session.metadata.threadId}:stored:user:${index}`,
         type: 'userMessage',
         content: [{ type: 'text', text, text_elements: [] }],
       })
+      currentTurnHasUserMessage = true
       return
     }
     if (messagePayload.role === 'assistant') {
