@@ -1540,7 +1540,7 @@ async function submitFirstMessageForNewThread(
 }
 
 .settings-danger-action {
-  @apply rounded-[1rem] border border-zinc-900 bg-zinc-900 px-3 py-2 text-[0.82rem] font-medium text-white transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-60;
+  @apply rounded-[1rem] border border-zinc-200 bg-white px-3 py-2 text-[0.82rem] font-medium text-zinc-700 transition hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-60;
 }
 
 .settings-inline-note {
