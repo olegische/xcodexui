@@ -165,6 +165,18 @@ function storedApiKeyForSelection(input: {
   return input.transportMode === 'openai' ? fallbackApiKey(input.authState) : ''
 }
 
+export async function hasStoredWasmProviderConfig(
+  draft: Pick<WasmRuntimeDraft, 'transportMode' | 'xrouterProvider'>,
+): Promise<boolean> {
+  const [authState, config] = await Promise.all([loadStoredAuthState(), loadStoredCodexConfig()])
+  return storedApiKeyForSelection({
+    config,
+    authState,
+    transportMode: draft.transportMode,
+    xrouterProvider: draft.xrouterProvider,
+  }).length > 0
+}
+
 export async function applyStoredWasmTransportDefaults(
   draft: WasmRuntimeDraft,
   transportMode: DemoTransportMode,

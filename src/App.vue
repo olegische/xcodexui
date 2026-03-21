@@ -216,7 +216,7 @@
                   <button class="settings-secondary-action" type="button" :disabled="isSavingWasmSettings" @click="reloadRuntimeSettingsScreen">
                     Reload
                   </button>
-                  <button class="settings-danger-action" type="button" :disabled="isSavingWasmSettings" @click="deleteCurrentWasmProviderConfig">
+                  <button v-if="hasStoredWasmProviderSecret" class="settings-danger-action" type="button" :disabled="isSavingWasmSettings" @click="deleteCurrentWasmProviderConfig">
                     Delete config
                   </button>
                 </div>
@@ -348,6 +348,7 @@ import {
   deleteStoredWasmProviderConfig,
   deriveWasmRuntimeStatus,
   getWasmRuntimeStatus,
+  hasStoredWasmProviderConfig,
   loadWasmRuntimeDraft,
   saveWasmRuntimeDraft,
   type WasmRuntimeDraft,
@@ -453,6 +454,7 @@ const wasmRuntimeStatus = ref<WasmRuntimeStatus>({
 })
 const wasmSettingsFeedback = ref('')
 const wasmSettingsFeedbackTone = ref<'neutral' | 'error'>('neutral')
+const hasStoredWasmProviderSecret = ref(false)
 const isSavingWasmSettings = ref(false)
 const SEND_WITH_ENTER_KEY = 'codex-web-local.send-with-enter.v1'
 const IN_PROGRESS_SEND_MODE_KEY = 'codex-web-local.in-progress-send-mode.v1'
@@ -668,6 +670,10 @@ async function refreshWasmRuntimeSettings(): Promise<void> {
     const [draft, status] = await Promise.all([loadWasmRuntimeDraft(), getWasmRuntimeStatus()])
     wasmSettingsDraft.value = draft
     wasmRuntimeStatus.value = status
+    hasStoredWasmProviderSecret.value = await hasStoredWasmProviderConfig({
+      transportMode: draft.transportMode,
+      xrouterProvider: draft.xrouterProvider,
+    })
   } catch (error) {
     wasmRuntimeStatus.value = {
       label: 'Settings unavailable',
@@ -679,13 +685,23 @@ async function refreshWasmRuntimeSettings(): Promise<void> {
 
 function onWasmTransportModeChange(mode: DemoTransportMode): void {
   void (async () => {
-    wasmSettingsDraft.value = await applyStoredWasmTransportDefaults(wasmSettingsDraft.value, mode)
+    const nextDraft = await applyStoredWasmTransportDefaults(wasmSettingsDraft.value, mode)
+    wasmSettingsDraft.value = nextDraft
+    hasStoredWasmProviderSecret.value = await hasStoredWasmProviderConfig({
+      transportMode: nextDraft.transportMode,
+      xrouterProvider: nextDraft.xrouterProvider,
+    })
   })()
 }
 
 function onWasmXrouterProviderChange(provider: XrouterProvider): void {
   void (async () => {
-    wasmSettingsDraft.value = await applyStoredWasmXrouterProvider(wasmSettingsDraft.value, provider)
+    const nextDraft = await applyStoredWasmXrouterProvider(wasmSettingsDraft.value, provider)
+    wasmSettingsDraft.value = nextDraft
+    hasStoredWasmProviderSecret.value = await hasStoredWasmProviderConfig({
+      transportMode: nextDraft.transportMode,
+      xrouterProvider: nextDraft.xrouterProvider,
+    })
   })()
 }
 
@@ -738,6 +754,7 @@ async function deleteCurrentWasmProviderConfig(): Promise<void> {
       transportMode: wasmSettingsDraft.value.transportMode,
       xrouterProvider: wasmSettingsDraft.value.xrouterProvider,
     })
+    hasStoredWasmProviderSecret.value = false
     await refreshAll()
     await refreshWasmRuntimeSettings()
     wasmSettingsFeedback.value = 'Saved provider config deleted.'
