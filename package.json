@@ -35,6 +35,7 @@
     "prepare:wasm-runtime": "bash scripts/prepare-wasm-runtime.sh",
     "dev": "vite",
     "build:frontend": "vue-tsc --noEmit && vite build",
+    "build:frontend:wasm": "just wasm-runtime-pull && vue-tsc --noEmit && VITE_CODEX_RUNTIME=wasm vite build",
     "build:cli": "tsup",
     "build": "npm run build:frontend && npm run build:cli",
     "preview": "vite preview",
