@@ -1635,7 +1635,7 @@ async function submitFirstMessageForNewThread(
 }
 
 .settings-form-row {
-  @apply flex items-center justify-between gap-4 px-5 py-3;
+  @apply flex flex-col items-start justify-between gap-3 px-5 py-3 sm:flex-row sm:items-center sm:gap-4;
 }
 
 .settings-form-row.is-input {
@@ -1643,7 +1643,7 @@ async function submitFirstMessageForNewThread(
 }
 
 .settings-form-copy {
-  @apply flex min-w-0 flex-1 flex-col gap-1;
+  @apply flex min-w-0 w-full flex-col gap-1 sm:flex-1;
 }
 
 .settings-form-title {
@@ -1665,7 +1665,7 @@ async function submitFirstMessageForNewThread(
 .settings-select,
 .settings-input,
 .settings-select-button {
-  @apply h-10 min-w-[21rem] shrink-0 rounded-[1rem] border border-zinc-200 bg-white px-4 text-[0.82rem] text-zinc-800 outline-none transition focus:border-zinc-400;
+  @apply h-10 w-full min-w-0 shrink-0 rounded-[1rem] border border-zinc-200 bg-white px-4 text-[0.82rem] text-zinc-800 outline-none transition focus:border-zinc-400 sm:w-auto sm:min-w-[21rem];
 }
 
 .settings-select {
