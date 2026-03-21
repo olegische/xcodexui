@@ -399,7 +399,7 @@ async function startServer(options: { port: string; password: string | boolean; 
 
   const lines = [
     '',
-    'Codex Web Local is running!',
+    'XCodex WASM is running!',
     `  Version:  ${version}`,
     '  GitHub:   https://github.com/friuns2/codexui',
     '',
