@@ -216,6 +216,9 @@
                   <button class="settings-secondary-action" type="button" :disabled="isSavingWasmSettings" @click="reloadRuntimeSettingsScreen">
                     Reload
                   </button>
+                  <button class="settings-danger-action" type="button" :disabled="isSavingWasmSettings" @click="deleteCurrentWasmProviderConfig">
+                    Delete saved provider config
+                  </button>
                 </div>
 
                 <p v-if="wasmSettingsFeedback" class="settings-inline-note" :class="{ 'is-error': wasmSettingsFeedbackTone === 'error' }">
@@ -340,7 +343,9 @@ import { useMobile } from './composables/useMobile'
 import { BROWSER_WORKSPACE_ROOT, IS_WASM_RUNTIME } from './config/runtime'
 import {
   applyWasmTransportDefaults,
-  applyWasmXrouterProvider,
+  applyStoredWasmTransportDefaults,
+  applyStoredWasmXrouterProvider,
+  deleteStoredWasmProviderConfig,
   deriveWasmRuntimeStatus,
   getWasmRuntimeStatus,
   loadWasmRuntimeDraft,
@@ -673,11 +678,15 @@ async function refreshWasmRuntimeSettings(): Promise<void> {
 }
 
 function onWasmTransportModeChange(mode: DemoTransportMode): void {
-  wasmSettingsDraft.value = applyWasmTransportDefaults(wasmSettingsDraft.value, mode)
+  void (async () => {
+    wasmSettingsDraft.value = await applyStoredWasmTransportDefaults(wasmSettingsDraft.value, mode)
+  })()
 }
 
 function onWasmXrouterProviderChange(provider: XrouterProvider): void {
-  wasmSettingsDraft.value = applyWasmXrouterProvider(wasmSettingsDraft.value, provider)
+  void (async () => {
+    wasmSettingsDraft.value = await applyStoredWasmXrouterProvider(wasmSettingsDraft.value, provider)
+  })()
 }
 
 async function saveCurrentWasmRuntimeSettings(): Promise<void> {
@@ -709,6 +718,29 @@ async function reloadRuntimeSettingsScreen(): Promise<void> {
     await refreshAll()
     await refreshWasmRuntimeSettings()
     wasmSettingsFeedback.value = 'Runtime settings reloaded.'
+  } catch (error) {
+    wasmSettingsFeedback.value = error instanceof Error ? error.message : String(error)
+    wasmSettingsFeedbackTone.value = 'error'
+  } finally {
+    isSavingWasmSettings.value = false
+  }
+}
+
+async function deleteCurrentWasmProviderConfig(): Promise<void> {
+  if (!isWasmRuntime || isSavingWasmSettings.value) return
+
+  isSavingWasmSettings.value = true
+  wasmSettingsFeedback.value = ''
+  wasmSettingsFeedbackTone.value = 'neutral'
+
+  try {
+    wasmSettingsDraft.value = await deleteStoredWasmProviderConfig({
+      transportMode: wasmSettingsDraft.value.transportMode,
+      xrouterProvider: wasmSettingsDraft.value.xrouterProvider,
+    })
+    await refreshAll()
+    await refreshWasmRuntimeSettings()
+    wasmSettingsFeedback.value = 'Saved provider config deleted.'
   } catch (error) {
     wasmSettingsFeedback.value = error instanceof Error ? error.message : String(error)
     wasmSettingsFeedbackTone.value = 'error'
@@ -1505,6 +1537,10 @@ async function submitFirstMessageForNewThread(
 
 .settings-secondary-action {
   @apply rounded-[1rem] border border-zinc-200 bg-white px-3 py-2 text-[0.82rem] font-medium text-zinc-700 transition hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-60;
+}
+
+.settings-danger-action {
+  @apply rounded-[1rem] border border-red-200 bg-red-50 px-3 py-2 text-[0.82rem] font-medium text-red-700 transition hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-60;
 }
 
 .settings-inline-note {

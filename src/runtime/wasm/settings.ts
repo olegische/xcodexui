@@ -117,6 +117,94 @@ export function applyWasmXrouterProvider(
   }
 }
 
+function findStoredProviderConfig(
+  config: CodexCompatibleConfig,
+  transportMode: DemoTransportMode,
+  xrouterProvider: XrouterProvider,
+) {
+  return (
+    Object.values(config.modelProviders).find((provider) => {
+      if (transportMode === 'openai') return provider.providerKind === 'openai'
+      if (transportMode === 'openai-compatible') return provider.providerKind === 'openai_compatible'
+      return (
+        provider.providerKind === 'xrouter_browser' &&
+        (provider.metadata?.xrouterProvider ?? null) === xrouterProvider
+      )
+    }) ?? null
+  )
+}
+
+function cloneConfigWithoutProviderSecret(
+  config: CodexCompatibleConfig,
+  transportMode: DemoTransportMode,
+  xrouterProvider: XrouterProvider,
+): CodexCompatibleConfig {
+  const provider = findStoredProviderConfig(config, transportMode, xrouterProvider)
+  if (!provider) return config
+
+  const nextEnv = { ...config.env }
+  delete nextEnv[provider.envKey]
+
+  return {
+    ...config,
+    env: nextEnv,
+  }
+}
+
+function storedApiKeyForSelection(input: {
+  config: CodexCompatibleConfig
+  authState: AuthState | null
+  transportMode: DemoTransportMode
+  xrouterProvider: XrouterProvider
+}): string {
+  const provider = findStoredProviderConfig(input.config, input.transportMode, input.xrouterProvider)
+  if (provider) {
+    const apiKey = input.config.env[provider.envKey]?.trim()
+    if (apiKey) return apiKey
+  }
+  return input.transportMode === 'openai' ? fallbackApiKey(input.authState) : ''
+}
+
+export async function applyStoredWasmTransportDefaults(
+  draft: WasmRuntimeDraft,
+  transportMode: DemoTransportMode,
+): Promise<WasmRuntimeDraft> {
+  const [authState, config] = await Promise.all([loadStoredAuthState(), loadStoredCodexConfig()])
+  const nextDraft = applyWasmTransportDefaults(draft, transportMode)
+  const storedProvider = findStoredProviderConfig(config, transportMode, nextDraft.xrouterProvider)
+  return {
+    ...nextDraft,
+    providerDisplayName: storedProvider?.name ?? nextDraft.providerDisplayName,
+    providerBaseUrl: storedProvider?.baseUrl ?? nextDraft.providerBaseUrl,
+    apiKey: storedApiKeyForSelection({
+      config,
+      authState,
+      transportMode,
+      xrouterProvider: nextDraft.xrouterProvider,
+    }),
+  }
+}
+
+export async function applyStoredWasmXrouterProvider(
+  draft: WasmRuntimeDraft,
+  provider: XrouterProvider,
+): Promise<WasmRuntimeDraft> {
+  const [authState, config] = await Promise.all([loadStoredAuthState(), loadStoredCodexConfig()])
+  const nextDraft = applyWasmXrouterProvider(draft, provider)
+  const storedProvider = findStoredProviderConfig(config, nextDraft.transportMode, provider)
+  return {
+    ...nextDraft,
+    providerDisplayName: storedProvider?.name ?? nextDraft.providerDisplayName,
+    providerBaseUrl: storedProvider?.baseUrl ?? nextDraft.providerBaseUrl,
+    apiKey: storedApiKeyForSelection({
+      config,
+      authState,
+      transportMode: nextDraft.transportMode,
+      xrouterProvider: provider,
+    }),
+  }
+}
+
 export async function loadWasmRuntimeDraft(): Promise<WasmRuntimeDraft> {
   const [authState, codexConfig] = await Promise.all([loadStoredAuthState(), loadStoredCodexConfig()])
   return draftFromConfig(codexConfig, authState)
@@ -153,6 +241,34 @@ export async function saveWasmRuntimeDraft(draft: WasmRuntimeDraft): Promise<Cod
   ])
 
   return config
+}
+
+export async function deleteStoredWasmProviderConfig(
+  draft: Pick<WasmRuntimeDraft, 'transportMode' | 'xrouterProvider'>,
+): Promise<WasmRuntimeDraft> {
+  const [authState, config] = await Promise.all([loadStoredAuthState(), loadStoredCodexConfig()])
+  const nextConfig = cloneConfigWithoutProviderSecret(config, draft.transportMode, draft.xrouterProvider)
+  const shouldClearOpenAiFallback = draft.transportMode === 'openai'
+  const nextAuthState =
+    shouldClearOpenAiFallback
+      ? {
+          authMode: authState?.authMode ?? ('apiKey' as const),
+          openaiApiKey: null,
+          accessToken: authState?.accessToken ?? null,
+          refreshToken: authState?.refreshToken ?? null,
+          chatgptAccountId: authState?.chatgptAccountId ?? null,
+          chatgptPlanType: authState?.chatgptPlanType ?? null,
+          lastRefreshAt: authState?.lastRefreshAt ?? null,
+        }
+      : authState
+
+  if (shouldClearOpenAiFallback) {
+    await saveStoredAuthState(nextAuthState)
+  }
+
+  await saveStoredCodexConfig(nextConfig)
+
+  return draftFromConfig(nextConfig, nextAuthState)
 }
 
 export async function getWasmRuntimeStatus(): Promise<WasmRuntimeStatus> {
