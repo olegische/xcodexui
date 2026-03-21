@@ -130,7 +130,7 @@
                 </button>
                 <div class="runtime-settings-heading">
                   <h2 class="runtime-settings-title">Runtime</h2>
-                  <p class="runtime-settings-subtitle">Browser-hosted Codex runtime configuration. Browser storage keeps only the current provider config.</p>
+                  <p class="runtime-settings-subtitle">Browser-hosted XCodex WASM runtime configuration. Only the current provider config is stored locally in browser IndexedDB and handled directly by the browser runtime.</p>
                 </div>
               </div>
 
@@ -182,7 +182,7 @@
                   <label class="settings-form-row is-input">
                     <span class="settings-form-copy">
                       <span class="settings-form-title">API key</span>
-                      <span class="settings-form-description">Stored in browser IndexedDB. OAuth is disabled.</span>
+                      <span class="settings-form-description">Only the current API key is stored locally and used directly by the browser runtime. OAuth is disabled.</span>
                     </span>
                     <input v-model="wasmSettingsDraft.apiKey" class="settings-input" type="password" placeholder="Paste API key" />
                   </label>
