@@ -440,10 +440,10 @@ const homeDirectory = ref('')
 const isSettingsOpen = ref(false)
 const wasmSettingsDraft = ref<WasmRuntimeDraft>({
   transportMode: 'xrouter-browser',
-  providerDisplayName: 'DeepSeek via Browser Runtime',
-  providerBaseUrl: 'https://api.deepseek.com',
+  providerDisplayName: 'OpenRouter via Browser Runtime',
+  providerBaseUrl: 'https://openrouter.ai/api/v1',
   apiKey: '',
-  xrouterProvider: 'deepseek',
+  xrouterProvider: 'openrouter',
   model: '',
   modelReasoningEffort: 'medium',
   personality: 'pragmatic',

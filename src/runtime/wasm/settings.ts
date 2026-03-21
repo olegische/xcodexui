@@ -336,7 +336,7 @@ function draftFromConfig(config: CodexCompatibleConfig, authState: AuthState | n
     providerDisplayName: provider.name,
     providerBaseUrl: provider.baseUrl,
     apiKey: activeProviderApiKey(config) || fallbackApiKey(authState),
-    xrouterProvider: provider.metadata?.xrouterProvider ?? 'deepseek',
+    xrouterProvider: provider.metadata?.xrouterProvider ?? 'openrouter',
     model: config.model.trim(),
     modelReasoningEffort: config.modelReasoningEffort?.trim() || 'medium',
     personality: config.personality?.trim() || 'pragmatic',
