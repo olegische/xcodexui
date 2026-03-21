@@ -342,13 +342,13 @@ import { useDesktopState } from './composables/useDesktopState'
 import { useMobile } from './composables/useMobile'
 import { BROWSER_WORKSPACE_ROOT, IS_WASM_RUNTIME } from './config/runtime'
 import {
-  applyWasmTransportDefaults,
   applyStoredWasmTransportDefaults,
   applyStoredWasmXrouterProvider,
   deleteStoredWasmProviderConfig,
   deriveWasmRuntimeStatus,
   getWasmRuntimeStatus,
   hasStoredWasmProviderConfig,
+  listWasmModelsForDraft,
   loadWasmRuntimeDraft,
   saveWasmRuntimeDraft,
   type WasmRuntimeDraft,
@@ -455,7 +455,10 @@ const wasmRuntimeStatus = ref<WasmRuntimeStatus>({
 const wasmSettingsFeedback = ref('')
 const wasmSettingsFeedbackTone = ref<'neutral' | 'error'>('neutral')
 const hasStoredWasmProviderSecret = ref(false)
+const wasmRuntimeModelIds = ref<string[]>([])
 const isSavingWasmSettings = ref(false)
+let wasmModelRefreshToken = 0
+let wasmModelRefreshTimer: ReturnType<typeof setTimeout> | null = null
 const SEND_WITH_ENTER_KEY = 'codex-web-local.send-with-enter.v1'
 const IN_PROGRESS_SEND_MODE_KEY = 'codex-web-local.in-progress-send-mode.v1'
 const DARK_MODE_KEY = 'codex-web-local.dark-mode.v1'
@@ -506,7 +509,7 @@ const filteredMessages = computed(() =>
 const liveOverlay = computed(() => selectedLiveOverlay.value)
 const composerThreadContextId = computed(() => (isHomeRoute.value ? '__new-thread__' : selectedThreadId.value))
 const runtimeModelOptions = computed(() =>
-  availableModelIds.value.map((modelId) => ({ value: modelId, label: modelId })),
+  (isWasmRuntime ? wasmRuntimeModelIds.value : availableModelIds.value).map((modelId) => ({ value: modelId, label: modelId })),
 )
 const derivedRuntimeStatus = computed(() =>
   deriveWasmRuntimeStatus({
@@ -587,6 +590,10 @@ onUnmounted(() => {
     clearTimeout(threadSearchTimer)
     threadSearchTimer = null
   }
+  if (wasmModelRefreshTimer) {
+    clearTimeout(wasmModelRefreshTimer)
+    wasmModelRefreshTimer = null
+  }
   stopPolling()
 })
 
@@ -646,6 +653,23 @@ watch(
   { immediate: true },
 )
 
+watch(
+  () => [
+    wasmSettingsDraft.value.transportMode,
+    wasmSettingsDraft.value.xrouterProvider,
+    wasmSettingsDraft.value.providerBaseUrl.trim(),
+    wasmSettingsDraft.value.apiKey.trim(),
+  ],
+  () => {
+    if (!isWasmRuntime) return
+    if (wasmModelRefreshTimer) clearTimeout(wasmModelRefreshTimer)
+    wasmModelRefreshTimer = setTimeout(() => {
+      wasmModelRefreshTimer = null
+      void refreshWasmRuntimeModelOptions()
+    }, 150)
+  },
+)
+
 function onSkillsChanged(): void {
   void refreshSkills()
 }
@@ -670,6 +694,7 @@ async function refreshWasmRuntimeSettings(): Promise<void> {
     const [draft, status] = await Promise.all([loadWasmRuntimeDraft(), getWasmRuntimeStatus()])
     wasmSettingsDraft.value = draft
     wasmRuntimeStatus.value = status
+    void refreshWasmRuntimeModelOptions(draft)
     hasStoredWasmProviderSecret.value = await hasStoredWasmProviderConfig({
       transportMode: draft.transportMode,
       xrouterProvider: draft.xrouterProvider,
@@ -680,6 +705,22 @@ async function refreshWasmRuntimeSettings(): Promise<void> {
       detail: error instanceof Error ? error.message : String(error),
       isError: true,
     }
+  }
+}
+
+async function refreshWasmRuntimeModelOptions(draft = wasmSettingsDraft.value): Promise<void> {
+  if (!isWasmRuntime) return
+  const refreshToken = ++wasmModelRefreshToken
+  try {
+    const modelIds = await listWasmModelsForDraft({
+      providerBaseUrl: draft.providerBaseUrl,
+      apiKey: draft.apiKey,
+    })
+    if (refreshToken !== wasmModelRefreshToken) return
+    wasmRuntimeModelIds.value = modelIds
+  } catch {
+    if (refreshToken !== wasmModelRefreshToken) return
+    wasmRuntimeModelIds.value = []
   }
 }
 

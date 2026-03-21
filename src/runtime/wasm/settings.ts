@@ -305,6 +305,30 @@ export async function getWasmRuntimeStatus(): Promise<WasmRuntimeStatus> {
   })
 }
 
+export async function listWasmModelsForDraft(
+  draft: Pick<WasmRuntimeDraft, 'providerBaseUrl' | 'apiKey'>,
+): Promise<string[]> {
+  const apiKey = draft.apiKey.trim()
+  const baseUrl = draft.providerBaseUrl.trim().replace(/\/+$/u, '')
+  if (!apiKey || !baseUrl) return []
+
+  const response = await fetch(`${baseUrl}/models`, {
+    headers: {
+      Accept: 'application/json',
+      Authorization: `Bearer ${apiKey}`,
+    },
+  })
+
+  if (!response.ok) {
+    throw new Error(`Model list failed with HTTP ${response.status}`)
+  }
+
+  const payload = await response.json() as { data?: Array<{ id?: unknown }> }
+  return Array.isArray(payload.data)
+    ? payload.data.map((row) => (typeof row?.id === 'string' ? row.id.trim() : '')).filter(Boolean)
+    : []
+}
+
 function draftFromConfig(config: CodexCompatibleConfig, authState: AuthState | null): WasmRuntimeDraft {
   const provider = getActiveProvider(config)
   return {
