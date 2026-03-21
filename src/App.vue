@@ -513,7 +513,13 @@ const runtimeModelOptions = computed(() =>
   (isWasmRuntime ? wasmRuntimeModelIds.value : availableModelIds.value).map((modelId) => ({ value: modelId, label: modelId })),
 )
 const runtimeModelAllowsManualInput = computed(() =>
-  isWasmRuntime && wasmSettingsDraft.value.transportMode === 'openai-compatible',
+  isWasmRuntime && (
+    wasmSettingsDraft.value.transportMode === 'openai-compatible'
+    || (
+      wasmSettingsDraft.value.transportMode === 'xrouter-browser'
+      && wasmSettingsDraft.value.xrouterProvider === 'openai'
+    )
+  ),
 )
 const derivedRuntimeStatus = computed(() =>
   deriveWasmRuntimeStatus({
