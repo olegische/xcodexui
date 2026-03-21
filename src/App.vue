@@ -173,7 +173,7 @@
                       @change="onWasmXrouterProviderChange(wasmSettingsDraft.xrouterProvider)"
                     >
                       <option value="deepseek">DeepSeek</option>
-                      <option value="openai">OpenAI</option>
+                      <option value="openai">OpenAI-compatible</option>
                       <option value="openrouter">OpenRouter</option>
                       <option value="zai">ZAI</option>
                     </select>
