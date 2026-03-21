@@ -2,14 +2,12 @@
 
 `XCodexUI` is the product and repository name.
 
-The published npm package / CLI entry point is still `codexapp`, but this codebase should be described as `XCodexUI`, not as "xcodex app".
-
 Browser UI for Codex with two runtime modes:
 
 - `wasm` mode: Codex runtime runs inside the browser and stores state in IndexedDB
 - `server` mode: web UI talks to a local Codex app-server bridge
 
-This repository should be understood as a wasm-first Codex UI with a secondary local/server mode. The old README treated the project mostly as a generic remote UI wrapper; that is no longer an accurate description of the codebase.
+This repository should be understood as a wasm-first Codex UI with a secondary local/server mode.
 
 ## What This Project Is
 
@@ -135,11 +133,11 @@ Tool availability depends on runtime mode.
 
 ### WASM mode
 
-The current wasm path has a small, explicit browser-tool surface.
+The current wasm path exposes several wasm-runtime tool layers, not just the small built-in workspace set.
 
-#### Browser tools
+#### Workspace built-ins
 
-From the current wasm gateway implementation, the built-in browser tool names recognized in persisted/runtime tool events are:
+These are the built-in workspace/file tools registered directly by the wasm core:
 
 - `read_file`
 - `list_dir`
@@ -148,16 +146,65 @@ From the current wasm gateway implementation, the built-in browser tool names re
 - `update_plan`
 - `request_user_input`
 
-These are the tools that are explicitly treated as browser built-ins in the current wasm gateway implementation.
+Notes:
+
+- `request_user_input` is conditional and depends on runtime config / mode
+- `apply_patch` is the only freeform built-in in this group
+
+#### Browser dynamic tools
+
+The upstream browser runtime in `xcodex` also exposes a browser-aware dynamic tool catalog. The canonical tool names are:
+
+- `browser__tool_search`
+- `browser__inspect_page`
+- `browser__inspect_dom`
+- `browser__list_interactives`
+- `browser__click`
+- `browser__fill`
+- `browser__navigate`
+- `browser__wait_for`
+- `browser__inspect_storage`
+- `browser__inspect_cookies`
+- `browser__inspect_http`
+- `browser__inspect_resources`
+- `browser__inspect_performance`
+- `browser__evaluate`
+
+The runtime also accepts these alias names for compatibility:
+
+- `browser__page_context`
+- `browser__extract_dom`
+- `browser__probe_http`
+- `browser__page_resources`
+- `browser__performance_snapshot`
+- `browser__run_probe`
 
 Practical meaning:
 
-- `read_file`, `list_dir`, `grep_files` cover read-oriented workspace inspection
-- `apply_patch` covers structured file edits
-- `update_plan` covers checklist / task-plan updates
-- `request_user_input` covers explicit user-input requests during tool flows
+- page inspection: `browser__inspect_page`, `browser__inspect_dom`, `browser__list_interactives`
+- page actions: `browser__click`, `browser__fill`, `browser__navigate`, `browser__wait_for`
+- browser state inspection: `browser__inspect_storage`, `browser__inspect_cookies`
+- network/resource/perf inspection: `browser__inspect_http`, `browser__inspect_resources`, `browser__inspect_performance`
+- controlled JS execution: `browser__evaluate`
+- catalog lookup: `browser__tool_search`
 
-This browser tool surface is materially narrower than the server-mode tool surface and should be documented as such.
+#### Optional runtime-added tools
+
+Depending on runtime config and what the upstream wasm runtime has registered for the session, wasm can also expose:
+
+- `tool_search`
+- `tool_suggest`
+- session-provided dynamic tools
+- app tools
+
+That means the complete wasm tool surface is:
+
+- fixed built-in workspace tools
+- fixed browser dynamic tools
+- optional search/suggest tools
+- optional dynamic/app tools contributed by the active runtime session
+
+This is materially broader than the old README implied.
 
 ### Server mode
 
