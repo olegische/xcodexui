@@ -273,7 +273,7 @@
                 </div>
               </div>
 
-                <ThreadComposer :active-thread-id="composerThreadContextId"
+                <ThreadComposer v-if="!showWasmRuntimeSetupCta" :active-thread-id="composerThreadContextId"
                   :cwd="composerCwd"
                 :models="availableModelIds" :selected-model="selectedModelId"
                 :selected-reasoning-effort="selectedReasoningEffort" :skills="installedSkills"
@@ -281,7 +281,6 @@
                 :enable-file-mentions="!isWasmRuntime"
                 :enable-attachments="!isWasmRuntime"
                 :enable-dictation="!isWasmRuntime"
-                :disabled="showWasmRuntimeSetupCta"
                 :is-turn-in-progress="false"
                 :is-interrupting-turn="false" :send-with-enter="sendWithEnter" :in-progress-submit-mode="inProgressSendMode" @submit="onSubmitThreadMessage"
                 @update:selected-model="onSelectModel" @update:selected-reasoning-effort="onSelectReasoningEffort" />
@@ -308,7 +307,16 @@
                   @steer="steerQueuedMessage"
                   @delete="removeQueuedMessage"
                 />
-                <ThreadComposer :active-thread-id="composerThreadContextId"
+                <div v-if="showWasmRuntimeSetupCta" class="wasm-runtime-setup-card">
+                  <div class="wasm-runtime-setup-copy">
+                    <strong class="wasm-runtime-setup-title">{{ wasmRuntimeStatus.label }}</strong>
+                    <p class="wasm-runtime-setup-description">{{ wasmRuntimeStatus.detail }}</p>
+                  </div>
+                  <button class="wasm-runtime-setup-action" type="button" @click="openRuntimeSettings">
+                    Open runtime settings
+                  </button>
+                </div>
+                <ThreadComposer v-else :active-thread-id="composerThreadContextId"
                   :cwd="composerCwd"
                   :models="availableModelIds"
                   :selected-model="selectedModelId" :selected-reasoning-effort="selectedReasoningEffort"
@@ -540,7 +548,6 @@ const derivedRuntimeStatus = computed(() =>
 )
 const showWasmRuntimeSetupCta = computed(() =>
   isWasmRuntime
-  && isHomeRoute.value
   && wasmRuntimeStatus.value.isError,
 )
 const composerCwd = computed(() => {
