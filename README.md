@@ -31,6 +31,8 @@ In wasm mode:
 - runtime config is stored in browser IndexedDB
 - thread sessions are stored in browser IndexedDB
 - the thread list is indexed separately in browser IndexedDB
+- provider secrets such as API keys stay in browser IndexedDB
+- provider credentials are consumed by the browser runtime itself, not by a local app-server
 - the effective workspace root is `/workspace`
 - several server-only features are intentionally disabled
 
@@ -123,6 +125,7 @@ Supported transport families in the current code:
 - `openai-compatible`
 
 The API key and provider config are stored in browser storage, not in a server-side config file.
+In the current implementation that means IndexedDB, and the key is used directly by the browser runtime rather than being handed off to a local app-server.
 
 ## Available Tools
 
@@ -252,6 +255,12 @@ Persisted data includes:
 - Codex config
 - stored thread sessions
 - lightweight thread metadata for the sidebar
+
+For provider credentials, the practical meaning is:
+
+- API keys are stored in IndexedDB, not in localStorage
+- key handling stays inside the browser runtime path
+- there is no local app-server hop for credential processing in wasm mode
 
 This is also why the app can reconstruct thread content after reload even when the in-memory runtime state is gone.
 
