@@ -219,6 +219,12 @@ After each feature implementation session that uses this skill:
 - App-server RPC for rename uses method `thread/name/set` with params `{ threadId, name }` (not `threadName`).
 - `thread/name/updated` realtime notification carries `{ threadId, threadName }`, so parity implementations should handle both request/response naming differences (`name` on write, `threadName` on notification).
 
+## Findings: Webview Base Title (2026-03-21)
+
+- Extracted `Codex.app` webview shell at `/tmp/codex-app-extracted/webview/index.html` uses the base document title `Codex`.
+- Repository-local title strings such as `Codex Web Local` are project-specific branding, not inherited from the installed desktop app.
+- For title-only branding fixes in this repo, checking `index.html` is sufficient unless a runtime `document.title` override also exists.
+
 ## Findings: Theme Palette Reference (2026-03-21)
 
 - Extracted Codex.app assets include syntax themes such as `gruvbox-dark-hard-*`, but no obvious app-shell palette bundle dedicated to a gruvbox UI chrome.
