@@ -250,11 +250,13 @@ Wasm mode expects local browser runtime assets under:
 - `public/pkg`
 - `public/xrouter-browser`
 
-These are prepared by:
+Prepare them with the `just` recipe:
 
 ```bash
-bash scripts/prepare-wasm-runtime.sh
+just wasm-runtime-pull
 ```
+
+The underlying implementation lives in `scripts/prepare-wasm-runtime.sh`, but the intended entry point for repository users is the `just` recipe.
 
 Environment variables supported by the script:
 
