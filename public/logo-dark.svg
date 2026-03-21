@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 240" role="img" aria-labelledby="title desc">
+  <title id="title">X logo concept 17</title>
+  <desc id="desc">A dark version of the refined X monogram with blue left arms, a blue center, a light red upper right arm, and a white lower right arm.</desc>
+  <rect x="14" y="14" width="212" height="212" rx="52" fill="#0a0a0a"/>
+  <g transform="translate(120 120) scale(1.2) translate(-120 -120)">
+    <path fill="#458588" d="M63 56 H91 L120 96 L104 117 Z"/>
+    <path fill="#458588" d="M104 117 L87 180 H59 L120 134 Z"/>
+    <path fill="#fb4934" d="M149 56 H177 L136 117 L120 96 Z"/>
+    <path fill="#f9fafb" d="M136 117 L181 180 H153 L120 134 Z"/>
+    <path fill="#458588" d="M120 96 L136 117 L120 134 L104 117 Z"/>
+  </g>
+</svg>

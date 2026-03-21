@@ -234,6 +234,12 @@
           <template v-else-if="isHomeRoute">
             <div class="content-grid">
               <div class="new-thread-empty">
+                <img
+                  v-if="isWasmRuntime"
+                  class="new-thread-logo"
+                  :src="wasmHeroLogoSrc"
+                  alt="XCodex WASM"
+                />
                 <p class="new-thread-hero">{{ isWasmRuntime ? 'Run in the browser' : "Let's build" }}</p>
                 <ComposerDropdown class="new-thread-folder-dropdown" :model-value="newThreadCwd"
                   :options="newThreadFolderOptions" placeholder="Choose folder"
@@ -481,9 +487,11 @@ let wasmModelRefreshTimer: ReturnType<typeof setTimeout> | null = null
 const SEND_WITH_ENTER_KEY = 'codex-web-local.send-with-enter.v1'
 const IN_PROGRESS_SEND_MODE_KEY = 'codex-web-local.in-progress-send-mode.v1'
 const DARK_MODE_KEY = 'codex-web-local.dark-mode.v1'
+const darkModeMediaQuery = typeof window !== 'undefined' ? window.matchMedia('(prefers-color-scheme: dark)') : null
 const sendWithEnter = ref(loadBoolPref(SEND_WITH_ENTER_KEY, true))
 const inProgressSendMode = ref<'steer' | 'queue'>(loadInProgressSendModePref())
 const darkMode = ref<'system' | 'light' | 'dark'>(loadDarkModePref())
+const prefersDarkMode = ref(darkModeMediaQuery?.matches ?? true)
 
 const routeThreadId = computed(() => {
   const rawThreadId = route.params.threadId
@@ -529,6 +537,12 @@ const liveOverlay = computed(() => selectedLiveOverlay.value)
 const composerThreadContextId = computed(() => (isHomeRoute.value ? '__new-thread__' : selectedThreadId.value))
 const runtimeModelOptions = computed(() =>
   (isWasmRuntime ? wasmRuntimeModelIds.value : availableModelIds.value).map((modelId) => ({ value: modelId, label: modelId })),
+)
+const isEffectiveDarkMode = computed(() =>
+  darkMode.value === 'dark' || (darkMode.value === 'system' && prefersDarkMode.value),
+)
+const wasmHeroLogoSrc = computed(() =>
+  isEffectiveDarkMode.value ? '/logo-dark.svg?v=neutral950' : '/logo-white.svg?v=light',
 )
 const runtimeModelAllowsManualInput = computed(() =>
   isWasmRuntime && (
@@ -593,8 +607,6 @@ const newThreadFolderOptions = computed(() => {
 
   return options
 })
-const darkModeMediaQuery = typeof window !== 'undefined' ? window.matchMedia('(prefers-color-scheme: dark)') : null
-
 onMounted(() => {
   window.addEventListener('keydown', onWindowKeyDown)
   applyDarkMode()
@@ -1171,6 +1183,7 @@ function cycleDarkMode(): void {
 
 function applyDarkMode(): void {
   const root = document.documentElement
+  prefersDarkMode.value = darkModeMediaQuery?.matches ?? true
   if (darkMode.value === 'dark') {
     root.classList.add('dark')
   } else if (darkMode.value === 'light') {
@@ -1462,6 +1475,10 @@ async function submitFirstMessageForNewThread(
 
 .new-thread-empty {
   @apply flex-1 min-h-0 flex flex-col items-center justify-center gap-0.5 px-3 sm:px-6;
+}
+
+.new-thread-logo {
+  @apply mb-3 h-auto w-full max-w-[9rem] sm:mb-4 sm:max-w-[11rem];
 }
 
 .new-thread-hero {
