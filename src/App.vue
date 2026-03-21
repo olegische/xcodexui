@@ -1509,7 +1509,7 @@ async function submitFirstMessageForNewThread(
 }
 
 .wasm-runtime-setup-card {
-  @apply mt-4 flex w-full max-w-xl items-center justify-between gap-4 rounded-2xl border border-amber-500/30 bg-amber-500/10 px-4 py-3;
+  @apply mt-4 flex w-full max-w-xl items-center justify-between gap-4 rounded-2xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 mx-auto;
 }
 
 .wasm-runtime-setup-copy {
