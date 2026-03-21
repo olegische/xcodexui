@@ -715,7 +715,7 @@ watch(
 
 watch(
   () => props.activeThreadId,
-  () => {
+  (activeThreadId) => {
     draft.value = ''
     selectedImages.value = []
     selectedSkills.value = []
@@ -723,6 +723,8 @@ watch(
     isAttachMenuOpen.value = false
     isSlashMenuOpen.value = false
     closeFileMention()
+    if (!activeThreadId) return
+    nextTick(() => inputRef.value?.focus())
   },
 )
 
