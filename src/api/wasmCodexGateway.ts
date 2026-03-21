@@ -21,6 +21,7 @@ import {
   readIndexedThread,
   type WasmThreadIndexEntry,
 } from '../runtime/wasm/threadIndex'
+import * as wasmStorage from '../runtime/wasm/storage'
 
 type CurrentModelConfig = {
   model: string
@@ -38,6 +39,10 @@ type SkillInfo = {
   path: string
   scope: string
   enabled: boolean
+}
+
+type WasmRuntimeRpcCaller = {
+  requestTyped?: <T>(method: string, params: Record<string, unknown>) => Promise<T>
 }
 
 const THREAD_LIST_SOURCE_KINDS: ThreadSourceKind[] = [
@@ -64,6 +69,14 @@ function toProjectName(cwd: string): string {
   return parts.at(-1) || cwd || 'workspace'
 }
 
+async function openWasmRuntimeDb(): Promise<IDBDatabase> {
+  return await new Promise((resolve, reject) => {
+    const request = indexedDB.open('codex-wasm-browser-terminal')
+    request.onsuccess = () => resolve(request.result)
+    request.onerror = () => reject(request.error ?? new Error('failed to open wasm runtime db'))
+  })
+}
+
 function buildTextWithAttachments(
   prompt: string,
   files: Array<{ label: string; path: string; fsPath: string }>,
@@ -81,6 +94,132 @@ function normalizeReasoningEffort(value: unknown): ReasoningEffort | '' {
   return typeof value === 'string' && allowed.includes(value as ReasoningEffort)
     ? value as ReasoningEffort
     : ''
+}
+
+async function callWasmRpc<T>(method: string, params: Record<string, unknown>): Promise<T> {
+  const { runtime } = await getWasmRuntimeContext()
+  const caller = runtime as WasmRuntimeRpcCaller
+  if (typeof caller.requestTyped !== 'function') {
+    throw new Error(`wasm runtime does not support ${method}`)
+  }
+  return await caller.requestTyped<T>(method, params)
+}
+
+async function readStoredThreadSessionItemCount(threadId: string): Promise<number> {
+  const db = await openWasmRuntimeDb()
+  return await new Promise((resolve, reject) => {
+    const tx = db.transaction('threadSessions', 'readonly')
+    const request = tx.objectStore('threadSessions').get(threadId)
+    request.onsuccess = () => {
+      const session = request.result as { items?: unknown[] } | undefined
+      resolve(Array.isArray(session?.items) ? session.items.length : 0)
+    }
+    request.onerror = () => reject(request.error ?? new Error(`failed to read wasm session ${threadId}`))
+  })
+}
+
+function isStaleLoadedThreadPayload(payload: ThreadReadResponse): boolean {
+  const turns = Array.isArray(payload.thread?.turns) ? payload.thread.turns : []
+  return turns.length > 0
+    && turns.every((turn) => Array.isArray(turn.items) && turn.items.length === 0)
+    && turns.some((turn) => turn.status === 'inProgress')
+}
+
+type StoredSession = Awaited<ReturnType<typeof wasmStorage.loadStoredThreadSession>>
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null
+}
+
+function toStoredSessionPayload(session: NonNullable<StoredSession>): ThreadReadResponse {
+  const turns: Array<{
+    id: string
+    status: 'completed'
+    error: null
+    items: Array<Record<string, unknown>>
+  }> = []
+  let currentTurn: typeof turns[number] | null = null
+
+  const pushTurn = (turnId: string) => {
+    currentTurn = {
+      id: turnId,
+      status: 'completed',
+      error: null,
+      items: [],
+    }
+    turns.push(currentTurn)
+  }
+
+  session?.items.forEach((item, index) => {
+    const record = asRecord(item)
+    if (!record) return
+    if (record.type === 'turn_context') {
+      const payload = asRecord(record.payload)
+      const turnId = typeof payload?.turn_id === 'string' && payload.turn_id.length > 0
+        ? payload.turn_id
+        : `${session.metadata.threadId}:turn:${turns.length}`
+      pushTurn(turnId)
+      return
+    }
+    const payload = asRecord(record.payload)
+    if (record.type !== 'response_item' || payload?.type !== 'message') return
+    if (!currentTurn) pushTurn(`${session.metadata.threadId}:turn:0`)
+    const messagePayload = payload as {
+      role?: string
+      content?: Array<Record<string, unknown>>
+    }
+    const content = Array.isArray(messagePayload.content) ? messagePayload.content : []
+    if (messagePayload.role === 'user') {
+      const text = content
+        .filter((part) => part.type === 'input_text' && typeof part.text === 'string')
+        .map((part) => String(part.text))
+        .join('\n')
+        .trim()
+      if (!text) return
+      currentTurn?.items.push({
+        id: `${session.metadata.threadId}:stored:user:${index}`,
+        type: 'userMessage',
+        content: [{ type: 'text', text, text_elements: [] }],
+      })
+      return
+    }
+    if (messagePayload.role === 'assistant') {
+      const text = content
+        .filter((part) => part.type === 'output_text' && typeof part.text === 'string')
+        .map((part) => String(part.text))
+        .join('\n')
+        .trim()
+      if (!text) return
+      currentTurn?.items.push({
+        id: `${session.metadata.threadId}:stored:assistant:${index}`,
+        type: 'agentMessage',
+        text,
+      })
+    }
+  })
+
+  return {
+    thread: {
+      id: session.metadata.threadId,
+      preview: session.metadata.preview,
+      name: session.metadata.name ?? null,
+      ephemeral: false,
+      modelProvider: session.metadata.modelProvider,
+      createdAt: session.metadata.createdAt,
+      updatedAt: session.metadata.updatedAt,
+      status: 'idle' as const,
+      path: null,
+      cwd: session.metadata.cwd,
+      cliVersion: '',
+      source: 'unknown',
+      agentNickname: null,
+      agentRole: null,
+      gitInfo: null,
+      turns,
+    },
+  } as unknown as ThreadReadResponse
 }
 
 function extractActualThreadId(snapshot: { metadata: unknown; threadId: string }): string {
@@ -243,6 +382,7 @@ export async function resumeThread(threadId: string): Promise<void> {
 }
 
 export async function archiveThread(threadId: string): Promise<void> {
+  await callWasmRpc('thread/archive', { threadId })
   await archiveIndexedThread(threadId)
 }
 
@@ -322,10 +462,32 @@ export async function listThreadsRaw(): Promise<ThreadListResponse> {
 
 export async function readThreadRaw(threadId: string): Promise<ThreadReadResponse> {
   const { runtime } = await getWasmRuntimeContext()
-  const payload = await runtime.threadRead({
-    threadId,
-    includeTurns: true,
-  })
+  let payload: ThreadReadResponse
+  try {
+    payload = await runtime.threadRead({
+      threadId,
+      includeTurns: true,
+    })
+  } catch (error) {
+    if (error instanceof Error && error.message.includes('thread/read requires a loaded thread')) {
+      const storedSession = await wasmStorage.loadStoredThreadSession(threadId).catch(() => null)
+      if (storedSession) {
+        payload = toStoredSessionPayload(storedSession)
+      } else {
+        throw error
+      }
+    } else {
+      throw error
+    }
+  }
+  if (isStaleLoadedThreadPayload(payload)) {
+    const storedSession = await wasmStorage.loadStoredThreadSession(threadId).catch(() => null)
+    const storedItemCount = Array.isArray(storedSession?.items) ? storedSession.items.length : 0
+    if (storedItemCount > 0 && storedSession) {
+      await callWasmRpc('thread/unsubscribe', { threadId }).catch(() => null)
+      payload = toStoredSessionPayload(storedSession)
+    }
+  }
   await syncThreadIndexFromThread(payload.thread)
   return payload
 }
