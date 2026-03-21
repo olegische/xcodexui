@@ -1416,7 +1416,7 @@ onBeforeUnmount(() => {
 }
 
 .project-menu-item-danger {
-  @apply text-rose-700 hover:bg-rose-50;
+  @apply text-red-700 hover:bg-red-50;
 }
 
 .project-menu-label {
@@ -1508,7 +1508,7 @@ onBeforeUnmount(() => {
 }
 
 .thread-menu-item-danger {
-  @apply text-rose-700 hover:bg-rose-50;
+  @apply text-red-700 hover:bg-red-50;
 }
 
 .thread-icon {
@@ -1547,7 +1547,7 @@ onBeforeUnmount(() => {
 .thread-status-indicator[data-state='unread'] {
   width: 6.6667px;
   height: 6.6667px;
-  @apply bg-blue-600;
+  @apply bg-sky-600;
 }
 
 .thread-status-indicator[data-state='working'] {
@@ -1594,6 +1594,6 @@ onBeforeUnmount(() => {
 }
 
 .rename-thread-button-danger {
-  @apply bg-rose-600 text-white hover:bg-rose-700;
+  @apply bg-red-700 text-red-50 hover:bg-red-800;
 }
 </style>

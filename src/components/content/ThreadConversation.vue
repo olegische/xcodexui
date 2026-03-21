@@ -1041,11 +1041,11 @@ onBeforeUnmount(() => {
 }
 
 .conversation-loading {
-  @apply m-0 px-2 sm:px-6 text-sm text-slate-500;
+  @apply m-0 px-2 sm:px-6 text-sm text-zinc-500;
 }
 
 .conversation-empty {
-  @apply m-0 px-2 sm:px-6 text-sm text-slate-500;
+  @apply m-0 px-2 sm:px-6 text-sm text-zinc-500;
 }
 
 .conversation-list {
@@ -1110,7 +1110,7 @@ onBeforeUnmount(() => {
 }
 
 .request-button-primary {
-  @apply border-amber-500 bg-amber-500 text-white hover:bg-amber-600;
+  @apply border-amber-600 bg-amber-600 text-amber-50 hover:bg-amber-700;
 }
 
 .request-user-input {
@@ -1146,7 +1146,7 @@ onBeforeUnmount(() => {
 }
 
 .live-overlay-error {
-  @apply m-0 text-sm leading-5 text-rose-600 whitespace-pre-wrap;
+  @apply m-0 text-sm leading-5 text-red-600 whitespace-pre-wrap;
 }
 
 .message-body {
@@ -1172,7 +1172,7 @@ onBeforeUnmount(() => {
 }
 
 .message-image-button {
-  @apply block rounded-xl overflow-hidden border border-slate-300 bg-white p-0 transition hover:border-slate-400;
+  @apply block rounded-xl overflow-hidden border border-zinc-300 bg-white p-0 transition hover:border-zinc-400;
 }
 
 .message-image-preview {
@@ -1204,7 +1204,7 @@ onBeforeUnmount(() => {
 }
 
 .message-text {
-  @apply m-0 text-sm leading-relaxed whitespace-pre-wrap text-slate-800;
+  @apply m-0 text-sm leading-relaxed whitespace-pre-wrap text-zinc-800;
 }
 
 .tool-call-line {
@@ -1224,11 +1224,11 @@ onBeforeUnmount(() => {
 }
 
 .message-inline-code {
-  @apply rounded-md border border-slate-200 bg-slate-100/60 px-1.5 py-0.5 text-[0.875em] leading-[1.4] text-slate-900 font-mono;
+  @apply rounded-md border border-zinc-200 bg-zinc-100/70 px-1.5 py-0.5 text-[0.875em] leading-[1.4] text-zinc-900 font-mono;
 }
 
 .message-file-link {
-  @apply text-sm leading-relaxed text-[#0969da] no-underline hover:text-[#1f6feb] hover:underline underline-offset-2;
+  @apply text-sm leading-relaxed text-sky-700 no-underline hover:text-sky-600 hover:underline underline-offset-2;
 }
 
 .message-stack[data-role='user'] {
@@ -1241,7 +1241,7 @@ onBeforeUnmount(() => {
 }
 
 .message-card[data-role='user'] {
-  @apply rounded-2xl bg-slate-200 px-3 sm:px-4 py-2 sm:py-3 max-w-[min(560px,100%)];
+  @apply rounded-2xl bg-zinc-200 px-3 sm:px-4 py-2 sm:py-3 max-w-[min(560px,100%)];
   width: fit-content;
   margin-left: auto;
   align-self: flex-end;
@@ -1279,7 +1279,7 @@ onBeforeUnmount(() => {
 }
 
 .worked-separator-text {
-  @apply m-0 text-sm leading-relaxed font-normal text-slate-800;
+  @apply m-0 text-sm leading-relaxed font-normal text-zinc-800;
 }
 
 .worked-details {
@@ -1299,7 +1299,7 @@ onBeforeUnmount(() => {
 }
 
 .image-modal-close {
-  @apply absolute top-2 right-2 z-10 w-10 h-10 rounded-full bg-white/90 text-slate-900 border border-slate-300 flex items-center justify-center;
+  @apply absolute top-2 right-2 z-10 w-10 h-10 rounded-full border border-zinc-300 bg-white/90 text-zinc-900 flex items-center justify-center;
 }
 
 .image-modal-image {
@@ -1351,15 +1351,15 @@ onBeforeUnmount(() => {
 }
 
 .cmd-status-running .cmd-status {
-  @apply text-amber-600;
+  @apply text-amber-700;
 }
 
 .cmd-status-ok .cmd-status {
-  @apply text-emerald-600;
+  @apply text-lime-700;
 }
 
 .cmd-status-error .cmd-status {
-  @apply text-rose-600;
+  @apply text-red-600;
 }
 
 .cmd-output-wrap {

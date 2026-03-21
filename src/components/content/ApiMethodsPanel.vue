@@ -26,23 +26,23 @@ defineProps<{
 @reference "tailwindcss";
 
 .api-panel-root {
-  @apply h-full min-h-0 rounded-2xl border border-slate-200 bg-white p-4 flex flex-col;
+  @apply h-full min-h-0 rounded-2xl border border-zinc-200 bg-white p-4 flex flex-col;
 }
 
 .api-panel-header {
-  @apply pb-3 border-b border-slate-200;
+  @apply pb-3 border-b border-zinc-200;
 }
 
 .api-panel-title {
-  @apply m-0 text-lg font-semibold text-slate-900;
+  @apply m-0 text-lg font-semibold text-zinc-900;
 }
 
 .api-panel-count {
-  @apply m-0 mt-1 text-xs text-slate-500;
+  @apply m-0 mt-1 text-xs text-zinc-500;
 }
 
 .api-panel-loading {
-  @apply mt-3 mb-0 text-sm text-slate-500;
+  @apply mt-3 mb-0 text-sm text-zinc-500;
 }
 
 .api-method-list {
@@ -54,6 +54,6 @@ defineProps<{
 }
 
 .api-method-code {
-  @apply block rounded-md bg-slate-100 px-2 py-1 text-xs text-slate-700;
+  @apply block rounded-md bg-zinc-100 px-2 py-1 text-xs text-zinc-700;
 }
 </style>

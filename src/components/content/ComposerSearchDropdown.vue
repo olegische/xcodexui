@@ -205,7 +205,7 @@ onBeforeUnmount(() => window.removeEventListener('pointerdown', onDocumentPointe
 }
 
 .search-dropdown-option-check {
-  @apply w-4 shrink-0 text-center text-xs leading-5 text-emerald-600;
+  @apply w-4 shrink-0 text-center text-xs leading-5 text-lime-700;
 }
 
 .search-dropdown-option-label {

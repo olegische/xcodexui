@@ -341,11 +341,11 @@ onMounted(() => {
 }
 
 .skills-hub-toast-success {
-  @apply border border-emerald-200 bg-emerald-50 text-emerald-700;
+  @apply border border-lime-200 bg-lime-50 text-lime-800;
 }
 
 .skills-hub-toast-error {
-  @apply border border-rose-200 bg-rose-50 text-rose-700;
+  @apply border border-red-200 bg-red-50 text-red-700;
 }
 
 .skills-hub-section {
@@ -377,7 +377,7 @@ onMounted(() => {
 }
 
 .skills-hub-error {
-  @apply text-sm text-rose-600 py-4 text-center rounded-lg border border-rose-200 bg-rose-50;
+  @apply text-sm text-red-600 py-4 text-center rounded-lg border border-red-200 bg-red-50;
 }
 
 .skills-hub-empty {

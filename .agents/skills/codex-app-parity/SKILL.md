@@ -219,6 +219,11 @@ After each feature implementation session that uses this skill:
 - App-server RPC for rename uses method `thread/name/set` with params `{ threadId, name }` (not `threadName`).
 - `thread/name/updated` realtime notification carries `{ threadId, threadName }`, so parity implementations should handle both request/response naming differences (`name` on write, `threadName` on notification).
 
+## Findings: Theme Palette Reference (2026-03-21)
+
+- Extracted Codex.app assets include syntax themes such as `gruvbox-dark-hard-*`, but no obvious app-shell palette bundle dedicated to a gruvbox UI chrome.
+- The installed app still appears to rely on neutral gray shell surfaces, so for palette requests in this repo it is reasonable to keep layout/background surfaces gray and apply themed color only to semantic states (success, warning, error, active accents).
+
 ## Findings: WASM Thread Persistence (2026-03-21)
 
 - In wasm mode, UI-side thread index (`xcodexui-wasm`) can diverge from runtime session storage (`codex-wasm-browser-terminal`) if thread summaries only expose `preview` and omit `name`.

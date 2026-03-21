@@ -268,7 +268,7 @@ function onToggleEnabled(): void {
 }
 
 .sdm-link {
-  @apply text-xs text-blue-600 hover:text-blue-700 no-underline hover:underline shrink-0;
+  @apply text-xs text-sky-700 hover:text-sky-600 no-underline hover:underline shrink-0;
 }
 
 .sdm-footer {
@@ -288,7 +288,7 @@ function onToggleEnabled(): void {
 }
 
 .sdm-btn-danger {
-  @apply bg-rose-600 text-white hover:bg-rose-700;
+  @apply bg-red-700 text-red-50 hover:bg-red-800;
 }
 
 .sdm-btn-secondary {

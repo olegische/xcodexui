@@ -9,6 +9,7 @@
             :is-sidebar-collapsed="isSidebarCollapsed"
             :is-auto-refresh-enabled="isAutoRefreshEnabled"
             :auto-refresh-button-label="autoRefreshButtonLabel"
+            :show-auto-refresh-button="!isWasmRuntime"
             :show-new-thread-button="true"
             @toggle-sidebar="setSidebarCollapsed(!isSidebarCollapsed)"
             @toggle-auto-refresh="onToggleAutoRefreshTimer"
@@ -110,6 +111,7 @@
               :is-sidebar-collapsed="isSidebarCollapsed"
               :is-auto-refresh-enabled="isAutoRefreshEnabled"
               :auto-refresh-button-label="autoRefreshButtonLabel"
+              :show-auto-refresh-button="!isWasmRuntime"
               :show-new-thread-button="true"
               @toggle-sidebar="setSidebarCollapsed(!isSidebarCollapsed)"
               @toggle-auto-refresh="onToggleAutoRefreshTimer"
@@ -1297,7 +1299,7 @@ async function submitFirstMessageForNewThread(
 }
 
 .content-error {
-  @apply m-0 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700;
+  @apply m-0 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700;
 }
 
 .content-grid {
@@ -1349,7 +1351,7 @@ async function submitFirstMessageForNewThread(
 }
 
 .worktree-init-status.is-error {
-  @apply border-rose-300 bg-rose-50 text-rose-800;
+  @apply border-red-300 bg-red-50 text-red-800;
 }
 
 .worktree-init-status-title {
@@ -1361,7 +1363,7 @@ async function submitFirstMessageForNewThread(
 }
 
 .sidebar-settings-area {
-  @apply shrink-0 bg-slate-100 pt-2 px-2 pb-2;
+  @apply shrink-0 bg-zinc-100 pt-2 px-2 pb-2;
 }
 
 .sidebar-settings-button {
@@ -1442,7 +1444,7 @@ async function submitFirstMessageForNewThread(
 }
 
 .settings-panel-card {
-  @apply w-full max-w-[82rem] overflow-hidden rounded-[1.4rem] border border-zinc-200 bg-zinc-50/70;
+  @apply w-full max-w-[82rem] overflow-hidden rounded-[1.4rem] border border-zinc-200 bg-zinc-50;
 }
 
 .settings-form-grid {
@@ -1474,7 +1476,7 @@ async function submitFirstMessageForNewThread(
 }
 
 .settings-chip.is-error {
-  @apply bg-rose-600;
+  @apply bg-red-700;
 }
 
 .settings-select,
@@ -1513,7 +1515,7 @@ async function submitFirstMessageForNewThread(
 }
 
 .settings-inline-note.is-error {
-  @apply text-rose-700;
+  @apply text-red-700;
 }
 
 .settings-panel-enter-active,

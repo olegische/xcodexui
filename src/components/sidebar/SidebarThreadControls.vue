@@ -12,6 +12,7 @@
     </button>
 
     <button
+      v-if="showAutoRefreshButton"
       class="sidebar-thread-controls-button"
       type="button"
       :aria-pressed="isAutoRefreshEnabled"
@@ -47,6 +48,7 @@ defineProps<{
   isSidebarCollapsed: boolean
   isAutoRefreshEnabled: boolean
   autoRefreshButtonLabel: string
+  showAutoRefreshButton?: boolean
   showNewThreadButton?: boolean
 }>()
 
@@ -69,7 +71,7 @@ defineEmits<{
 }
 
 .sidebar-thread-controls-button[aria-pressed='true'] {
-  @apply border-emerald-200 bg-emerald-50 text-emerald-700;
+  @apply border-lime-200 bg-lime-50 text-lime-800;
 }
 
 .sidebar-thread-controls-button[aria-pressed='false'] {

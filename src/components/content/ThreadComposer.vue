@@ -792,7 +792,7 @@ watch(
 }
 
 .thread-composer-skill-chip {
-  @apply inline-flex items-center gap-1 rounded-md border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-xs text-emerald-700;
+  @apply inline-flex items-center gap-1 rounded-md border border-lime-200 bg-lime-50 px-2 py-0.5 text-xs text-lime-800;
 }
 
 .thread-composer-skill-chip-name {
@@ -800,7 +800,7 @@ watch(
 }
 
 .thread-composer-skill-chip-remove {
-  @apply ml-0.5 inline-flex h-3.5 w-3.5 items-center justify-center rounded-full border-0 bg-transparent text-emerald-500 transition hover:bg-emerald-200 hover:text-emerald-700 text-xs leading-none p-0;
+  @apply ml-0.5 inline-flex h-3.5 w-3.5 items-center justify-center rounded-full border-0 bg-transparent text-lime-600 transition hover:bg-lime-200 hover:text-lime-800 text-xs leading-none p-0;
 }
 
 .thread-composer-input-wrap {
@@ -908,7 +908,7 @@ watch(
 }
 
 .thread-composer-mic--active {
-  @apply bg-red-100 text-red-600 hover:bg-red-200 hover:text-red-700;
+  @apply bg-red-100 text-red-700 hover:bg-red-200 hover:text-red-800;
 }
 
 .thread-composer-mic-icon {
