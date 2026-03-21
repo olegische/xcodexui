@@ -292,18 +292,6 @@ That path starts a local HTTP server and serves the built web UI. It is still su
 - wasm runtime assets prepared locally for wasm development
 - Codex app-server environment available when using server mode
 
-## Screenshots
-
-### Skills Hub
-![Skills Hub](docs/screenshots/skills-hub.png)
-
-### Chat
-![Chat](docs/screenshots/chat.png)
-
-### Mobile UI
-![Skills Hub Mobile](docs/screenshots/skills-hub-mobile.png)
-![Chat Mobile](docs/screenshots/chat-mobile.png)
-
 ## Repository Pointers
 
 If you are reading the code, start here:
