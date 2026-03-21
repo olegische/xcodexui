@@ -130,7 +130,7 @@
                 </button>
                 <div class="runtime-settings-heading">
                   <h2 class="runtime-settings-title">Runtime</h2>
-                  <p class="runtime-settings-subtitle">Browser-hosted Codex runtime configuration.</p>
+                  <p class="runtime-settings-subtitle">Browser-hosted Codex runtime configuration. Browser storage keeps only the current provider config.</p>
                 </div>
               </div>
 
