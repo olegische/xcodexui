@@ -1,17 +1,14 @@
 # XCodexUI
 
-`XCodexUI` is the product and repository name.
+Browser UI for XCodex WASM.
 
-Browser UI for Codex with two runtime modes:
+Run Codex locally in your browser, with no backend on the execution path.
 
-- `wasm` mode: Codex runtime runs inside the browser and stores state in IndexedDB
-- `server` mode: web UI talks to a local Codex app-server bridge
-
-This repository should be understood as a wasm-first Codex UI with a secondary local/server mode.
+XCodexUI is a Vue-based UI for Codex with two runtime modes, built around a wasm-first product direction.
 
 ## What This Project Is
 
-`XCodexUI` is a Vue-based Codex UI that can run in two different backend configurations.
+XCodexUI is a Vue-based UI for Codex that can run in two different runtime configurations, with `wasm` mode as the primary architecture and product story.
 
 Related upstream repositories:
 
@@ -20,14 +17,14 @@ Related upstream repositories:
 
 ### 1. WASM mode
 
-The browser UI talks to a browser-hosted Codex runtime instead of an external app-server.
+The browser UI talks to a browser-hosted XCodex runtime instead of a local app-server bridge.
 
 Use this when you want:
 
-- a self-contained browser runtime
+- local execution inside the browser runtime
 - browser-persisted config and thread state
-- no external Codex app-server on the hot path
-- easier local experimentation with browser-native runtime behavior
+- no local app-server on the hot path
+- easier experimentation with browser-native runtime behavior
 
 In wasm mode:
 
@@ -73,11 +70,11 @@ Codex app-server
 
 ## Why WASM Matters Here
 
-The interesting part of this repository is not "yet another browser wrapper". It is that the same UI can run against a browser-resident Codex runtime.
+The interesting part of this repository is not "yet another browser wrapper". It is that the same UI can run against a browser-resident XCodex runtime.
 
 That changes the product shape:
 
-- no external app-server is required for message execution in wasm mode
+- no local app-server is required for message execution in wasm mode
 - state recovery after reload depends on browser storage rather than server transcript alone
 - runtime/provider configuration moves into a browser settings screen
 - feature availability depends on which runtime is active
