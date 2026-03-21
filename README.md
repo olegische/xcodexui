@@ -1,135 +1,245 @@
-# 🔥 codexapp
+# codexapp
 
-### 🚀 Run Codex App UI Anywhere: Linux, Windows, or Termux on Android 🚀
+Browser UI for Codex with two runtime modes:
 
-[![npm](https://img.shields.io/npm/v/codexapp?style=for-the-badge&logo=npm&logoColor=white)](https://www.npmjs.com/package/codexapp)
-[![platform](https://img.shields.io/badge/Platform-Linux%20%7C%20Windows%20%7C%20Android-blue?style=for-the-badge)](#-quick-start)
-[![node](https://img.shields.io/badge/Node-18%2B-339933?style=for-the-badge&logo=node.js&logoColor=white)](https://nodejs.org/)
-[![license](https://img.shields.io/badge/License-MIT-yellow?style=for-the-badge)](./LICENSE)
+- `server` mode: web UI talks to a local Codex app-server bridge
+- `wasm` mode: Codex runtime runs inside the browser and stores state in IndexedDB
 
-> **Codex UI in your browser. No drama. One command.**
->  
-> **Yes, that is your Codex desktop app experience exposed over web UI. Yes, it runs cross-platform.**
+This repository now has a real browser-hosted runtime path. That is the important part. The old README treated the project mostly as a generic remote UI wrapper; that is no longer an accurate description of the codebase.
+
+## What This Project Is
+
+`codexapp` is a Vue-based Codex UI that can run in two different backend configurations.
+
+### 1. Server mode
+
+The browser UI talks to a local Node/Express bridge, and that bridge proxies requests to Codex app-server.
+
+Use this when you want:
+
+- local filesystem access
+- worktrees
+- Skills Hub
+- file mentions and attachments
+- desktop-like server behavior
+
+### 2. WASM mode
+
+The browser UI talks to a browser-hosted Codex runtime instead of an external app-server.
+
+Use this when you want:
+
+- a self-contained browser runtime
+- browser-persisted config and thread state
+- no external Codex app-server on the hot path
+- easier local experimentation with browser-native runtime behavior
+
+In wasm mode:
+
+- runtime config is stored in browser IndexedDB
+- thread sessions are stored in browser IndexedDB
+- the thread list is indexed separately in browser IndexedDB
+- the effective workspace root is `/workspace`
+- several server-only features are intentionally disabled
+
+## Current Architecture
+
+### Server mode
 
 ```text
- ██████╗ ██████╗ ██████╗ ███████╗██╗  ██╗██╗   ██╗██╗
-██╔════╝██╔═══██╗██╔══██╗██╔════╝╚██╗██╔╝██║   ██║██║
-██║     ██║   ██║██║  ██║█████╗   ╚███╔╝ ██║   ██║██║
-██║     ██║   ██║██║  ██║██╔══╝   ██╔██╗ ██║   ██║██║
-╚██████╗╚██████╔╝██████╔╝███████╗██╔╝ ██╗╚██████╔╝██║
- ╚═════╝ ╚═════╝ ╚═════╝ ╚══════╝╚═╝  ╚═╝ ╚═════╝ ╚═╝
+Browser UI
+  -> HTTP / WebSocket
+Node/Express bridge
+  -> Codex app-server RPC
+Codex app-server
 ```
 
----
+### WASM mode
 
-## 🤯 What Is This?
-**`codexapp`** is a lightweight bridge that gives you a browser-accessible UI for Codex app-server workflows.
+```text
+Browser UI
+  -> wasmCodexGateway
+Browser-hosted Codex runtime
+  -> IndexedDB storage
+  -> local browser notifications
+```
 
-You run one command. It starts a local web server. You open it from your machine, your LAN, or wherever your setup allows.  
+## Why WASM Matters Here
 
-**TL;DR 🧠: Codex app UI, unlocked for Linux, Windows, and Termux-powered Android setups.**
+The interesting part of this repository is not "yet another browser wrapper". It is that the same UI can run against a browser-resident Codex runtime.
 
----
+That changes the product shape:
 
-## ⚡ Quick Start
-> **The main event.**
+- no external app-server is required for message execution in wasm mode
+- state recovery after reload depends on browser storage rather than server transcript alone
+- runtime/provider configuration moves into a browser settings screen
+- feature availability depends on which runtime is active
+
+If you are trying to understand the app as it exists today, start from wasm mode, not from the old remote-access story.
+
+## WASM Mode Behavior
+
+When `VITE_CODEX_RUNTIME=wasm`:
+
+- `src/api/codexGateway.ts` switches all core thread operations to `src/api/wasmCodexGateway.ts`
+- a browser runtime context is created with `xcodex-runtime`
+- config/auth/session data is stored in IndexedDB
+- sidebar thread metadata is mirrored into a lightweight local thread index
+- runtime notifications come from the browser runtime subscription, not from `/codex-api/ws`
+
+At a high level, one message goes through this path:
+
+```text
+ThreadComposer
+  -> App.vue submit flow
+  -> codexGateway
+  -> wasmCodexGateway
+  -> browser runtime turnStart
+  -> runtime notifications
+  -> UI live state
+  -> persisted browser session
+  -> threadRead / storage fallback
+```
+
+## WASM Runtime Settings
+
+In wasm mode the app exposes a dedicated Runtime settings screen. It lets the user configure:
+
+- transport mode
+- provider route
+- API key
+- base URL
+- model
+- reasoning effort
+
+Supported transport families in the current code:
+
+- `xrouter-browser`
+- `openai`
+- `openai-compatible`
+
+The API key and provider config are stored in browser storage, not in a server-side config file.
+
+## WASM Limitations
+
+Wasm mode is not a full drop-in replacement for server mode. Current UI/code behavior disables or limits several features:
+
+- Skills Hub is hidden
+- file mentions are disabled
+- file attachments are disabled
+- dictation is disabled
+- project browsing is disabled
+- worktree features are disabled
+- rollback UI is disabled
+- server request approval flows are effectively stubbed
+
+That is intentional and matches the current implementation.
+
+## Browser Persistence Model
+
+Wasm mode uses browser persistence heavily.
+
+### IndexedDB stores
+
+- runtime storage DB: `codex-wasm-browser-terminal`
+- thread index DB: `xcodexui-wasm`
+
+Persisted data includes:
+
+- provider/auth config
+- Codex config
+- stored thread sessions
+- lightweight thread metadata for the sidebar
+
+This is also why the app can reconstruct thread content after reload even when the in-memory runtime state is gone.
+
+## Running The Project
+
+### Standard development UI
 
 ```bash
-# 🔓 Run instantly (recommended)
+npm install
+npm run dev
+```
+
+This starts the Vite app in the default runtime mode.
+
+### WASM development
+
+First prepare the browser runtime assets:
+
+```bash
+just wasm-runtime-pull
+```
+
+Then run the app in wasm mode:
+
+```bash
+just wasm-dev
+```
+
+Or do both in one command:
+
+```bash
+just wasm-dev-ready
+```
+
+The wasm asset preparation script downloads and installs:
+
+- `xcodex` wasm browser bundle into `public/pkg`
+- `xrouter-browser` assets into `public/xrouter-browser`
+- runtime import bundle into `.vendor/xcodex-runtime`
+
+## Runtime Assets
+
+Wasm mode expects local browser runtime assets under:
+
+- `public/pkg`
+- `public/xrouter-browser`
+
+These are prepared by:
+
+```bash
+bash scripts/prepare-wasm-runtime.sh
+```
+
+Environment variables supported by the script:
+
+- `XCODEX_WASM_TARBALL`
+- `XROUTER_BROWSER_TARBALL`
+
+They can point either to URLs or local tarball paths.
+
+## Package Scripts
+
+```bash
+npm run dev
+npm run build:frontend
+npm run build:cli
+npm run build
+npm run prepare:wasm-runtime
+```
+
+## What The Published CLI Does
+
+The published `codexapp` CLI is still primarily the server-mode entry point.
+
+Typical flow:
+
+```bash
 npx codexapp
-
-# 🌐 Then open in browser
-# http://localhost:18923
 ```
 
-By default, `codexapp` now also starts:
+That path starts a local HTTP server and serves the built web UI. In the current codebase, that story is still valid, but it is only half of the product. The README should not pretend that server mode is the whole architecture.
 
-```bash
-cloudflared tunnel --url http://localhost:<port>
-```
+## Requirements
 
-It prints the tunnel URL, terminal QR code, and password together in startup output.  
-Use `--no-tunnel` to disable this behavior.
+- Node.js `18+`
+- browser with IndexedDB support for wasm mode
+- wasm runtime assets prepared locally for wasm development
+- Codex app-server environment available when using server mode
 
-### Linux 🐧
-```bash
-node -v   # should be 18+
-npx codexapp
-```
-
-### Windows 🪟 (PowerShell)
-```powershell
-node -v   # 18+
-npx codexapp
-```
-
-### Termux (Android) 🤖
-```bash
-pkg update && pkg upgrade -y
-pkg install nodejs -y
-npx codexapp
-```
-
-Android background requirements:
-
-1. Keep `codexapp` running in the current Termux session (do not close it).
-2. In Android settings, disable battery optimization for `Termux`.
-3. Keep the persistent Termux notification enabled so Android is less likely to kill it.
-4. Optional but recommended in Termux:
-```bash
-termux-wake-lock
-```
-5. Open the shown URL in your Android browser. If the app is killed, return to Termux and run `npx codexapp` again.
-
----
-
-## ✨ Features
-> **The payload.**
-
-- 🚀 One-command launch with `npx codexapp`
-- 🌍 Cross-platform support for Linux, Windows, and Termux on Android
-- 🖥️ Browser-first Codex UI flow on `http://localhost:18923`
-- 🌐 LAN-friendly access from other devices on the same network
-- 🧪 Remote/headless-friendly setup for server-based Codex usage
-- 🔌 Works with reverse proxies and tunneling setups
-- ⚡ No global install required for quick experimentation
-- 🎙️ Built-in hold-to-dictate voice input with transcription to composer draft
-
----
-
-## 🧩 Recent Product Features (from main commits)
-> **Not just launch. Actual UX upgrades.**
-
-- 🗂️ Searchable project picker in new-thread flow
-- ➕ Inline "Add new project" input inside picker (no browser prompt)
-- 📌 New projects get pinned to top automatically
-- 🧠 Smart default new-project name suggestion via server-side free-directory scan (`New Project (N)`)
-- 🔄 Project order persisted globally to workspace roots state
-- 🧵 Optimistic in-progress threads preserved during refresh/poll cycles
-- 📱 Mobile drawer sidebar in desktop layout (teleported overlay + swipe-friendly structure)
-- 🎛️ Skills Hub mobile-friendly spacing/toolbar layout improvements
-- 🪟 Skill detail modal tuned for mobile sheet-style behavior
-- 🧪 Skills Hub event typing fix for `SkillCard` select emit compatibility
-- 🎙️ Voice dictation flow in composer (`hold to dictate` -> transcribe -> append text)
-
----
-
-## 🌍 What Can You Do With This?
-
-| 🔥 Use Case | 💥 What You Get |
-|---|---|
-| 💻 Linux workstation | Run Codex UI in browser without depending on desktop shell |
-| 🪟 Windows machine | Launch web UI and access from Chrome/Edge quickly |
-| 📱 Termux on Android | Start service in Termux and control from mobile browser |
-| 🧪 Remote dev box | Keep Codex process on server, view UI from client device |
-| 🌐 LAN sharing | Open UI from another device on same network |
-| 🧰 Headless workflows | Keep terminal + browser split for productivity |
-| 🔌 Custom routing | Put behind reverse proxy/tunnel if needed |
-| ⚡ Fast experiments | `npx` run without full global setup |
-
----
-
-## 🖼️ Screenshots
+## Screenshots
 
 ### Skills Hub
 ![Skills Hub](docs/screenshots/skills-hub.png)
@@ -141,55 +251,25 @@ termux-wake-lock
 ![Skills Hub Mobile](docs/screenshots/skills-hub-mobile.png)
 ![Chat Mobile](docs/screenshots/chat-mobile.png)
 
----
+## Repository Pointers
 
-## 🏗️ Architecture
+If you are reading the code, start here:
 
-```text
-┌─────────────────────────────┐
-│  Browser (Desktop/Mobile)   │
-└──────────────┬──────────────┘
-               │ HTTP/WebSocket
-┌──────────────▼──────────────┐
-│         codexapp            │
-│  (Express + Vue UI bridge)  │
-└──────────────┬──────────────┘
-               │ RPC/Bridge calls
-┌──────────────▼──────────────┐
-│      Codex App Server       │
-└─────────────────────────────┘
-```
+- `src/config/runtime.ts`
+- `src/api/codexGateway.ts`
+- `src/api/wasmCodexGateway.ts`
+- `src/runtime/wasm/runtime.ts`
+- `src/runtime/wasm/storage.ts`
+- `src/runtime/wasm/threadIndex.ts`
+- `src/runtime/wasm/settings.ts`
+- `scripts/prepare-wasm-runtime.sh`
+- `src/runtime/wasm/README.md`
 
----
+## Contributing
 
-## 🎯 Requirements
-- ✅ Node.js `18+`
-- ✅ Codex app-server environment available
-- ✅ Browser access to host/port
-- ✅ Microphone permission (only for voice dictation)
+Issues and PRs are welcome, especially around:
 
----
-
-## 🐛 Troubleshooting
-
-| ❌ Problem | ✅ Fix |
-|---|---|
-| Port already in use | Run on a free port or stop old process |
-| `npx` fails | Update npm/node, then retry |
-| Termux install fails | `pkg update && pkg upgrade` then reinstall `nodejs` |
-| Can’t open from other device | Check firewall, bind address, and LAN routing |
-
----
-
-## 🤝 Contributing
-Issues and PRs are welcome.  
-Bring bug reports, platform notes, and setup improvements.
-
----
-
-## ⭐ Star This Repo
-If you believe Codex UI should be accessible from **any machine, any OS, any screen**, star this project and share it. ⭐
-
-<div align="center">
-Built for speed, portability, and a little bit of chaos 😏
-</div>
+- wasm runtime stability
+- transcript recovery after reload
+- parity gaps between server and wasm modes
+- documentation that reflects the actual architecture
