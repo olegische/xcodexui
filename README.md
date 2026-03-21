@@ -6,28 +6,16 @@ The published npm package / CLI entry point is still `codexapp`, but this codeba
 
 Browser UI for Codex with two runtime modes:
 
-- `server` mode: web UI talks to a local Codex app-server bridge
 - `wasm` mode: Codex runtime runs inside the browser and stores state in IndexedDB
+- `server` mode: web UI talks to a local Codex app-server bridge
 
-This repository now has a real browser-hosted runtime path. That is the important part. The old README treated the project mostly as a generic remote UI wrapper; that is no longer an accurate description of the codebase.
+This repository should be understood as a wasm-first Codex UI with a secondary local/server mode. The old README treated the project mostly as a generic remote UI wrapper; that is no longer an accurate description of the codebase.
 
 ## What This Project Is
 
 `XCodexUI` is a Vue-based Codex UI that can run in two different backend configurations.
 
-### 1. Server mode
-
-The browser UI talks to a local Node/Express bridge, and that bridge proxies requests to Codex app-server.
-
-Use this when you want:
-
-- local filesystem access
-- worktrees
-- Skills Hub
-- file mentions and attachments
-- desktop-like server behavior
-
-### 2. WASM mode
+### 1. WASM mode
 
 The browser UI talks to a browser-hosted Codex runtime instead of an external app-server.
 
@@ -46,17 +34,19 @@ In wasm mode:
 - the effective workspace root is `/workspace`
 - several server-only features are intentionally disabled
 
+### 2. Server mode
+
+The browser UI talks to a local Node/Express bridge, and that bridge proxies requests to Codex app-server.
+
+Use this when you want:
+
+- local filesystem access
+- worktrees
+- Skills Hub
+- file mentions and attachments
+- desktop-like server behavior
+
 ## Current Architecture
-
-### Server mode
-
-```text
-Browser UI
-  -> HTTP / WebSocket
-Node/Express bridge
-  -> Codex app-server RPC
-Codex app-server
-```
 
 ### WASM mode
 
@@ -66,6 +56,16 @@ Browser UI
 Browser-hosted Codex runtime
   -> IndexedDB storage
   -> local browser notifications
+```
+
+### Server mode
+
+```text
+Browser UI
+  -> HTTP / WebSocket
+Node/Express bridge
+  -> Codex app-server RPC
+Codex app-server
 ```
 
 ## Why WASM Matters Here
@@ -79,7 +79,7 @@ That changes the product shape:
 - runtime/provider configuration moves into a browser settings screen
 - feature availability depends on which runtime is active
 
-If you are trying to understand the app as it exists today, start from wasm mode, not from the old remote-access story.
+If you are trying to understand the app as it exists today, start from wasm mode. Server mode is still useful, but it is not the primary product story.
 
 ## WASM Mode Behavior
 
@@ -158,6 +158,7 @@ Practical interpretation:
 - wasm mode has a narrow local tool set
 - server mode can expose a broader tool set depending on the connected backend and MCP configuration
 - the README should not claim parity between the two
+- server mode is secondary in product positioning even if it exposes more tool categories
 
 ## WASM Limitations
 
@@ -194,15 +195,6 @@ This is also why the app can reconstruct thread content after reload even when t
 
 ## Running The Project
 
-### Standard development UI
-
-```bash
-npm install
-npm run dev
-```
-
-This starts the Vite app in the default runtime mode.
-
 ### WASM development
 
 First prepare the browser runtime assets:
@@ -228,6 +220,15 @@ The wasm asset preparation script downloads and installs:
 - `xcodex` wasm browser bundle into `public/pkg`
 - `xrouter-browser` assets into `public/xrouter-browser`
 - runtime import bundle into `.vendor/xcodex-runtime`
+
+### Standard development UI
+
+```bash
+npm install
+npm run dev
+```
+
+This starts the Vite app in the default runtime mode.
 
 ## Runtime Assets
 
@@ -259,9 +260,9 @@ npm run build
 npm run prepare:wasm-runtime
 ```
 
-## What The Published CLI Does
+## Local CLI / Server Mode
 
-The published `codexapp` CLI is still primarily the server-mode entry point.
+The published `codexapp` CLI is the local/server-mode entry point.
 
 Typical flow:
 
@@ -269,7 +270,7 @@ Typical flow:
 npx codexapp
 ```
 
-That path starts a local HTTP server and serves the built web UI. In the current codebase, that story is still valid, but it is only half of the product. The README should not pretend that server mode is the whole architecture.
+That path starts a local HTTP server and serves the built web UI. It is still supported, but it should be read as the secondary runtime path in this repository, not as the defining architecture.
 
 ## Requirements
 
