@@ -1,4 +1,8 @@
-# codexapp
+# XCodexUI
+
+`XCodexUI` is the product and repository name.
+
+The published npm package / CLI entry point is still `codexapp`, but this codebase should be described as `XCodexUI`, not as "xcodex app".
 
 Browser UI for Codex with two runtime modes:
 
@@ -9,7 +13,7 @@ This repository now has a real browser-hosted runtime path. That is the importan
 
 ## What This Project Is
 
-`codexapp` is a Vue-based Codex UI that can run in two different backend configurations.
+`XCodexUI` is a Vue-based Codex UI that can run in two different backend configurations.
 
 ### 1. Server mode
 
@@ -119,6 +123,41 @@ Supported transport families in the current code:
 - `openai-compatible`
 
 The API key and provider config are stored in browser storage, not in a server-side config file.
+
+## Available Tools
+
+Tool availability depends on runtime mode.
+
+### WASM mode
+
+The current wasm path has a small, explicit browser-tool surface. From the code, the built-in browser tool names recognized in persisted/runtime tool events are:
+
+- `read_file`
+- `list_dir`
+- `grep_files`
+- `apply_patch`
+- `update_plan`
+- `request_user_input`
+
+These are the tools that are explicitly treated as browser built-ins in the current wasm gateway implementation.
+
+### Server mode
+
+In server mode, XCodexUI is mostly a UI and transport layer over the connected Codex app-server. The effective tool surface is therefore defined by that backend, but the current UI/protocol handling clearly supports rendering and transporting at least these categories:
+
+- dynamic tool calls
+- MCP tool calls
+- command execution
+- web search
+- image view
+- file change / patch application flows
+- request-user-input flows
+
+Practical interpretation:
+
+- wasm mode has a narrow local tool set
+- server mode can expose a broader tool set depending on the connected backend and MCP configuration
+- the README should not claim parity between the two
 
 ## WASM Limitations
 
