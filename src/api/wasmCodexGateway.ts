@@ -137,6 +137,55 @@ function isBootstrapEnvironmentContextText(value: string): boolean {
   return /^<environment_context>\s*[\s\S]*<\/environment_context>$/u.test(value.trim())
 }
 
+function parseStoredToolArguments(value: unknown): unknown {
+  if (typeof value !== 'string') return value ?? null
+  try {
+    return JSON.parse(value)
+  } catch {
+    return value
+  }
+}
+
+function isBrowserBuiltinTool(name: unknown, namespace?: unknown): name is string {
+  if (typeof name !== 'string') return false
+  if (namespace !== undefined && namespace !== null && namespace !== 'browser') return false
+  return ['read_file', 'list_dir', 'grep_files', 'apply_patch', 'update_plan', 'request_user_input'].includes(name)
+}
+
+function normalizeStoredToolOutput(output: unknown): Array<Record<string, unknown>> | null {
+  if (!Array.isArray(output)) return null
+  const items: Array<Record<string, unknown>> = []
+  output.forEach((entry) => {
+    const record = asRecord(entry)
+    if (!record) return
+    if (record.type === 'input_text' && typeof record.text === 'string') {
+      items.push({ type: 'inputText', text: record.text })
+      return
+    }
+    if (record.type === 'input_image' && typeof record.image_url === 'string') {
+      items.push({ type: 'inputImage', imageUrl: record.image_url })
+    }
+  })
+  return items.length > 0 ? items : null
+}
+
+function normalizeStoredDynamicToolContentItems(contentItems: unknown): Array<Record<string, unknown>> | null {
+  if (!Array.isArray(contentItems)) return null
+  const items: Array<Record<string, unknown>> = []
+  contentItems.forEach((entry) => {
+    const record = asRecord(entry)
+    if (!record) return
+    if (record.type === 'inputText' && typeof record.text === 'string') {
+      items.push({ type: 'inputText', text: record.text })
+      return
+    }
+    if (record.type === 'inputImage' && typeof record.imageUrl === 'string') {
+      items.push({ type: 'inputImage', imageUrl: record.imageUrl })
+    }
+  })
+  return items.length > 0 ? items : null
+}
+
 function toStoredSessionPayload(session: NonNullable<StoredSession>): ThreadReadResponse {
   const turns: Array<{
     id: string
@@ -183,7 +232,83 @@ function toStoredSessionPayload(session: NonNullable<StoredSession>): ThreadRead
       currentTurnHasUserMessage = true
       return
     }
-    if (record.type !== 'response_item' || payload?.type !== 'message') return
+    if (record.type === 'event_msg' && payload?.type === 'dynamic_tool_call_request') {
+      const callId = typeof payload.callId === 'string' ? payload.callId : ''
+      const tool = typeof payload.tool === 'string' ? payload.tool : ''
+      if (!callId || !tool) return
+      if (!currentTurn) pushTurn(`${session.metadata.threadId}:turn:0`)
+      const existingToolIndex = currentTurn?.items.findIndex((item) =>
+        item.type === 'dynamicToolCall' && item.id === callId) ?? -1
+      if (existingToolIndex >= 0) return
+      currentTurn?.items.push({
+        id: callId,
+        type: 'dynamicToolCall',
+        tool,
+        arguments: payload.arguments ?? null,
+        status: 'inProgress',
+        contentItems: null,
+        success: null,
+        durationMs: null,
+      })
+      return
+    }
+    if (record.type === 'event_msg' && payload?.type === 'dynamic_tool_call_response') {
+      const callId = typeof payload.call_id === 'string' ? payload.call_id : ''
+      const tool = typeof payload.tool === 'string' ? payload.tool : ''
+      if (!callId || !tool) return
+      if (!currentTurn) pushTurn(`${session.metadata.threadId}:turn:0`)
+      const existingToolIndex = currentTurn?.items.findIndex((item) =>
+        item.type === 'dynamicToolCall' && item.id === callId) ?? -1
+      const completedTool = {
+        id: callId,
+        type: 'dynamicToolCall',
+        tool,
+        arguments: payload.arguments ?? null,
+        status: payload.success === false ? 'failed' : 'completed',
+        contentItems: normalizeStoredDynamicToolContentItems(payload.content_items),
+        success: typeof payload.success === 'boolean' ? payload.success : null,
+        durationMs: null,
+      }
+      if (existingToolIndex >= 0 && currentTurn) {
+        currentTurn.items[existingToolIndex] = completedTool
+      } else {
+        currentTurn?.items.push(completedTool)
+      }
+      return
+    }
+    if (record.type !== 'response_item') return
+    const payloadType = typeof payload?.type === 'string' ? payload.type : ''
+    const payloadRecord = payload ?? {}
+    if (payloadType === 'function_call' && isBrowserBuiltinTool(payloadRecord.name, payloadRecord.namespace)) {
+      const callId = typeof payloadRecord.call_id === 'string' ? payloadRecord.call_id : `${session.metadata.threadId}:tool:${index}`
+      currentTurn?.items.push({
+        id: callId,
+        type: 'dynamicToolCall',
+        tool: payloadRecord.name,
+        arguments: parseStoredToolArguments(payloadRecord.arguments),
+        status: 'inProgress',
+        contentItems: null,
+        success: null,
+        durationMs: null,
+      })
+      return
+    }
+    if (payloadType === 'function_call_output') {
+      const callId = typeof payloadRecord.call_id === 'string' ? payloadRecord.call_id : ''
+      if (!callId || !currentTurn) return
+      const itemIndex = currentTurn.items.findIndex((item) =>
+        item.type === 'dynamicToolCall' && item.id === callId)
+      if (itemIndex < 0) return
+      const existing = currentTurn.items[itemIndex] as Record<string, unknown>
+      currentTurn.items[itemIndex] = {
+        ...existing,
+        status: 'completed',
+        contentItems: normalizeStoredToolOutput(payloadRecord.output),
+        success: true,
+      }
+      return
+    }
+    if (payloadType !== 'message') return
     if (!currentTurn) pushTurn(`${session.metadata.threadId}:turn:0`)
     const messagePayload = payload as {
       role?: string
@@ -218,6 +343,7 @@ function toStoredSessionPayload(session: NonNullable<StoredSession>): ThreadRead
         type: 'agentMessage',
         text,
       })
+      return
     }
   })
 
