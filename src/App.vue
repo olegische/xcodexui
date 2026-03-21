@@ -200,7 +200,7 @@
                       <span class="settings-form-title">Model</span>
                       <span class="settings-form-description">Default model id for new turns.</span>
                     </span>
-                    <select v-if="runtimeModelOptions.length > 0" v-model="wasmSettingsDraft.model" class="settings-select">
+                    <select v-if="runtimeModelOptions.length > 0" v-model="wasmSettingsDraft.model" class="settings-select settings-select-model">
                       <option v-for="option in runtimeModelOptions" :key="option.value" :value="option.value">
                         {{ option.label }}
                       </option>
@@ -1675,6 +1675,14 @@ async function submitFirstMessageForNewThread(
   background-position: right 12px center;
   background-repeat: no-repeat;
   background-size: 14px 14px;
+}
+
+.settings-select-model {
+  @apply sm:w-[21rem];
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .settings-select-button {
