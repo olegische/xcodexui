@@ -273,7 +273,11 @@ function normalizeCommandStatus(value: unknown): CommandExecutionData['status'] 
 }
 
 function pickThreadName(summary: Thread): string {
-  const direct = [summary.preview]
+  const rawSummary = summary as Record<string, unknown>
+  const direct = [
+    typeof rawSummary.name === 'string' ? rawSummary.name : '',
+    summary.preview,
+  ]
   for (const candidate of direct) {
     if (typeof candidate === 'string' && candidate.trim().length > 0) {
       return candidate.trim()

@@ -1,5 +1,6 @@
 import type { Ref } from 'vue'
 import { getAvailableModelIds, getCurrentModelConfig, generateThreadTitle, persistThreadTitle, setDefaultModel } from '../../api/codexGateway'
+import { IS_WASM_RUNTIME } from '../../config/runtime'
 import type { ReasoningEffort, UiProjectGroup } from '../../types/codex'
 
 export function createThreadPreferences(params: {
@@ -68,6 +69,7 @@ export function createThreadPreferences(params: {
   }
 
   async function requestThreadTitleGeneration(threadId: string, prompt: string, cwd: string | null): Promise<void> {
+    if (IS_WASM_RUNTIME) return
     if (threadTitleById.value[threadId]) return
     const trimmed = prompt.trim()
     if (!trimmed) return

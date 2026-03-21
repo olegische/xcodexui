@@ -338,6 +338,8 @@ export function createThreadRealtime(params: {
     const shouldRefreshThreadMessages = method === 'turn/completed'
     const shouldRefreshThreads =
       method === 'thread/started' ||
+      method === 'turn/started' ||
+      method === 'turn/completed' ||
       method === 'thread/archived' ||
       method === 'thread/unarchived' ||
       method === 'thread/closed' ||

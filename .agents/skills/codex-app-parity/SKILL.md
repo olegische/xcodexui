@@ -219,6 +219,13 @@ After each feature implementation session that uses this skill:
 - App-server RPC for rename uses method `thread/name/set` with params `{ threadId, name }` (not `threadName`).
 - `thread/name/updated` realtime notification carries `{ threadId, threadName }`, so parity implementations should handle both request/response naming differences (`name` on write, `threadName` on notification).
 
+## Findings: Thread Title Parity In Wasm (2026-03-21)
+
+- Upstream local and wasm app-server both treat the first user message as the default thread label source via `thread.preview`; `thread/start` begins with empty `preview` and empty `name`.
+- Wasm app-server populates `thread.preview` as early as `turn/start` for threads whose preview is still empty, so browser clients should not materialize the empty `thread/start` payload as a persistent `Untitled thread`.
+- Protocol `Thread` shape supports both `name` and `preview`; parity mapping should prefer `name` when present, then fall back to `preview`.
+- For browser UI parity, refreshing thread list metadata on turn lifecycle events (`turn/started`, `turn/completed`) is sufficient to pull canonical `preview`/timestamps after the optimistic thread row is created.
+
 ## Findings: Thread Delete Semantics (2026-03-12)
 
 - In this app-server API surface there is no `thread/delete` method in v2 docs/schemas; thread removal from active list is handled through `thread/archive`.

@@ -95,15 +95,25 @@ function extractActualThreadId(snapshot: { metadata: unknown; threadId: string }
   return snapshot.threadId
 }
 
-function pickPreviewAndTitle(thread: unknown): { preview: string; title: string } {
+function readTrimmedString(record: Record<string, unknown>, key: string): string {
+  const value = record[key]
+  return typeof value === 'string' ? value.trim() : ''
+}
+
+function pickPreviewAndTitle(
+  thread: unknown,
+  current?: Pick<WasmThreadIndexEntry, 'title' | 'lastPreview'> | null,
+): { preview: string; title: string } {
   const record =
     thread !== null && typeof thread === 'object' && !Array.isArray(thread)
       ? thread as Record<string, unknown>
       : {}
-  const preview = typeof record.preview === 'string' ? record.preview.trim() : ''
+  const preview = readTrimmedString(record, 'preview')
+  const name = readTrimmedString(record, 'name')
+  const preservedTitle = current?.title?.trim() ?? ''
   return {
-    preview,
-    title: preview || 'Untitled thread',
+    preview: preview || current?.lastPreview || '',
+    title: name || preview || preservedTitle,
   }
 }
 
@@ -116,12 +126,24 @@ async function syncThreadIndexFromThread(threadValue: unknown): Promise<WasmThre
     typeof thread.id === 'string' && thread.id.length > 0
       ? thread.id
       : extractActualThreadId({ threadId: 'thread', metadata: thread })
-  const { preview, title } = pickPreviewAndTitle(thread)
   const cwd = typeof thread.cwd === 'string' && thread.cwd.trim().length > 0
     ? thread.cwd.trim()
     : BROWSER_WORKSPACE_ROOT
   const createdAtIso = toIso(thread.createdAt)
   const updatedAtIso = toIso(thread.updatedAt)
+  const currentEntry = actualThreadId ? await readIndexedThread(actualThreadId) : null
+  const { preview, title } = pickPreviewAndTitle(thread, currentEntry)
+  if (!currentEntry && !title && !preview) {
+    return {
+      id: actualThreadId,
+      cwd,
+      title: '',
+      createdAtIso,
+      updatedAtIso,
+      archived: false,
+      lastPreview: '',
+    }
+  }
   return await patchIndexedThread(actualThreadId, {
     cwd,
     title,
@@ -152,7 +174,7 @@ function groupIndexedThreads(entries: WasmThreadIndexEntry[]): UiProjectGroup[] 
         .sort((left, right) => right.updatedAtIso.localeCompare(left.updatedAtIso))
         .map((entry) => ({
           id: entry.id,
-          title: entry.title || 'Untitled thread',
+          title: entry.title || entry.lastPreview || 'Untitled thread',
           projectName,
           cwd: entry.cwd,
           hasWorktree: false,
