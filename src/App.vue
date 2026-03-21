@@ -205,7 +205,8 @@
                         {{ option.label }}
                       </option>
                     </select>
-                    <input v-else v-model="wasmSettingsDraft.model" class="settings-input" type="text" placeholder="gpt-5 / deepseek-chat / ..." />
+                    <input v-else-if="runtimeModelAllowsManualInput" v-model="wasmSettingsDraft.model" class="settings-input" type="text" placeholder="gpt-5 / deepseek-chat / ..." />
+                    <input v-else :value="wasmSettingsDraft.model" class="settings-input" type="text" placeholder="Models load after API key is set" disabled />
                   </label>
                 </div>
 
@@ -511,6 +512,9 @@ const composerThreadContextId = computed(() => (isHomeRoute.value ? '__new-threa
 const runtimeModelOptions = computed(() =>
   (isWasmRuntime ? wasmRuntimeModelIds.value : availableModelIds.value).map((modelId) => ({ value: modelId, label: modelId })),
 )
+const runtimeModelAllowsManualInput = computed(() =>
+  isWasmRuntime && wasmSettingsDraft.value.transportMode === 'openai-compatible',
+)
 const derivedRuntimeStatus = computed(() =>
   deriveWasmRuntimeStatus({
     providerName: wasmSettingsDraft.value.providerDisplayName,
@@ -642,7 +646,16 @@ watch(
 watch(
   () => runtimeModelOptions.value,
   (options) => {
-    if (!isWasmRuntime || options.length === 0) return
+    if (!isWasmRuntime) return
+    if (options.length === 0) {
+      if (!runtimeModelAllowsManualInput.value && wasmSettingsDraft.value.model.trim()) {
+        wasmSettingsDraft.value = {
+          ...wasmSettingsDraft.value,
+          model: '',
+        }
+      }
+      return
+    }
     const current = wasmSettingsDraft.value.model.trim()
     if (current && options.some((option) => option.value === current)) return
     wasmSettingsDraft.value = {
