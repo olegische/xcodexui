@@ -182,7 +182,7 @@
                   <label class="settings-form-row is-input">
                     <span class="settings-form-copy">
                       <span class="settings-form-title">API key</span>
-                      <span class="settings-form-description">Only the current API key is stored locally and used directly by the browser runtime. OAuth is disabled.</span>
+                      <span class="settings-form-description">Current API key for the browser runtime. OAuth is disabled.</span>
                     </span>
                     <input v-model="wasmSettingsDraft.apiKey" class="settings-input" type="password" placeholder="Paste API key" />
                   </label>
