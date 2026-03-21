@@ -158,7 +158,7 @@
                     >
                       <option value="xrouter-browser">Browser runtime router</option>
                       <option value="openai">OpenAI</option>
-                      <option value="openai-compatible">OpenAI-compatible</option>
+                      <option value="openai-compatible">Responses API-compatible</option>
                     </select>
                   </label>
 
