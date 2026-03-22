@@ -152,6 +152,15 @@
   @apply bg-neutral-200 text-neutral-900 hover:bg-white;
 }
 
+:root.dark .thread-composer-submit.thread-composer-submit--chaos {
+  color: white;
+  background-color: #cc241d;
+}
+
+:root.dark .thread-composer-submit.thread-composer-submit--chaos:hover {
+  background-color: #9d0006;
+}
+
 :root.dark .thread-composer-submit:disabled {
   @apply bg-neutral-700 text-neutral-500;
 }

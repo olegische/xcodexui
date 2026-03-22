@@ -188,6 +188,7 @@
           <button
             v-else
             class="thread-composer-submit"
+            :class="{ 'thread-composer-submit--chaos': isChaosMode }"
             type="button"
             aria-label="Send message"
             title="Send"
@@ -245,6 +246,7 @@ const props = defineProps<{
   skills?: SkillItem[]
   isTurnInProgress?: boolean
   isInterruptingTurn?: boolean
+  isChaosMode?: boolean
   disabled?: boolean
   hasQueueAbove?: boolean
   sendWithEnter?: boolean
@@ -929,6 +931,14 @@ watch(
 
 .thread-composer-submit {
   @apply inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border-0 bg-zinc-900 text-white transition hover:bg-black disabled:cursor-not-allowed disabled:bg-zinc-200 disabled:text-zinc-500;
+}
+
+.thread-composer-submit--chaos {
+  background-color: #cc241d;
+}
+
+.thread-composer-submit--chaos:hover {
+  background-color: #9d0006;
 }
 
 .thread-composer-submit-icon {

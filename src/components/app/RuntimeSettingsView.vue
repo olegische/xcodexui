@@ -16,7 +16,7 @@
         <label class="settings-form-row">
           <span class="settings-form-copy">
             <span class="settings-form-title">Status</span>
-            <span class="settings-form-description">{{ derivedRuntimeStatus.detail }}</span>
+            <span v-if="derivedRuntimeStatus.isError && derivedRuntimeStatus.detail" class="settings-form-description">{{ derivedRuntimeStatus.detail }}</span>
           </span>
           <span class="settings-chip" :class="{ 'is-error': derivedRuntimeStatus.isError }">
             {{ derivedRuntimeStatus.label }}
@@ -120,6 +120,13 @@
             </option>
           </select>
         </label>
+      </div>
+
+      <div v-if="draft.runtimeMode === 'chaos'" class="settings-chaos-warning">
+        <strong class="settings-chaos-warning-title">Chaos mode warning</strong>
+        <p class="settings-chaos-warning-body">
+          This mode enables higher-risk browser capabilities. Approval-gated tools may inspect or script the current page context, including browser-visible storage, DOM state, and same-origin app state.
+        </p>
       </div>
 
       <div class="settings-actions">
@@ -268,6 +275,20 @@ defineEmits<{
 
 .settings-actions {
   @apply flex justify-end gap-2 px-5 py-3;
+}
+
+.settings-chaos-warning {
+  @apply mx-5 my-4 rounded-[1rem] border px-4 py-3;
+  border-color: #cc241d;
+  background-color: #cc241d;
+}
+
+.settings-chaos-warning-title {
+  @apply block text-[0.82rem] font-semibold text-white;
+}
+
+.settings-chaos-warning-body {
+  @apply mt-1 m-0 text-[0.82rem] leading-6 text-white;
 }
 
 .settings-primary-action {

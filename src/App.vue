@@ -20,6 +20,7 @@
         :send-with-enter="sendWithEnter"
         :in-progress-send-mode="inProgressSendMode"
         :dark-mode="darkMode"
+        :is-chaos-mode="isChaosMode"
         @toggle-sidebar="setSidebarCollapsed(!isSidebarCollapsed)"
         @toggle-auto-refresh="onToggleAutoRefreshTimer"
         @start-new-thread-from-toolbar="onStartNewThreadFromToolbar"
@@ -89,6 +90,7 @@
           <HomeView
             v-else-if="isHomeRoute"
             :is-wasm-runtime="isWasmRuntime"
+            :is-chaos-mode="isChaosMode"
             :wasm-hero-logo-src="wasmHeroLogoSrc"
             :new-thread-cwd="newThreadCwd"
             :new-thread-folder-options="newThreadFolderOptions"
@@ -123,6 +125,7 @@
             :selected-thread-server-requests="selectedThreadServerRequests"
             :is-selected-thread-in-progress="isSelectedThreadInProgress"
             :is-wasm-runtime="isWasmRuntime"
+            :is-chaos-mode="isChaosMode"
             :is-rolling-back="isRollingBack"
             :selected-thread-queued-messages="selectedThreadQueuedMessages"
             :show-wasm-runtime-setup-cta="showWasmRuntimeSetupCta"
@@ -310,6 +313,7 @@ const knownThreadIdSet = computed(() => {
 const isHomeRoute = computed(() => route.name === 'home')
 const isSkillsRoute = computed(() => !isWasmRuntime && route.name === 'skills')
 const isRuntimeSettingsRoute = computed(() => route.name === 'settings' && runtimeSettingsTab.value === 'runtime')
+const isChaosMode = computed(() => isWasmRuntime && wasmSettingsDraft.value.runtimeMode === 'chaos')
 const contentTitle = computed(() => {
   if (isSkillsRoute.value) return 'Skills'
   if (isHomeRoute.value) return 'New thread'

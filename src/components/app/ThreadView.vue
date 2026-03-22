@@ -49,6 +49,7 @@
         :enable-dictation="!isWasmRuntime"
         :is-turn-in-progress="isSelectedThreadInProgress"
         :is-interrupting-turn="isInterruptingTurn"
+        :is-chaos-mode="isChaosMode"
         :has-queue-above="selectedThreadQueuedMessages.length > 0"
         :send-with-enter="sendWithEnter"
         :in-progress-submit-mode="inProgressSendMode"
@@ -86,6 +87,7 @@ defineProps<{
   selectedThreadServerRequests: UiServerRequest[]
   isSelectedThreadInProgress: boolean
   isWasmRuntime: boolean
+  isChaosMode: boolean
   isRollingBack: boolean
   selectedThreadQueuedMessages: QueuedMessage[]
   showWasmRuntimeSetupCta: boolean

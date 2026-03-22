@@ -94,7 +94,14 @@
             <span class="sidebar-settings-value">{{ darkModeLabel }}</span>
           </button>
           <button v-if="isWasmRuntime" class="sidebar-settings-row" type="button" @click="$emit('open-runtime-settings')">
-            <span class="sidebar-settings-label">Runtime</span>
+            <span class="sidebar-settings-main">
+              <span class="sidebar-settings-label">Runtime</span>
+              <span
+                v-if="isChaosMode"
+                class="sidebar-settings-value sidebar-settings-value-danger"
+                style="background-color: #cc241d; color: #ffffff;"
+              >Chaos</span>
+            </span>
             <IconTablerChevronRight class="sidebar-settings-row-chevron" />
           </button>
         </div>
@@ -136,6 +143,7 @@ const props = defineProps<{
   sendWithEnter: boolean
   inProgressSendMode: 'steer' | 'queue'
   darkMode: 'system' | 'light' | 'dark'
+  isChaosMode?: boolean
 }>()
 
 defineEmits<{
@@ -255,12 +263,21 @@ const darkModeLabel = computed(() =>
   @apply text-left;
 }
 
+.sidebar-settings-main {
+  @apply flex items-center gap-2;
+}
+
 .sidebar-settings-row-chevron {
   @apply h-4 w-4 text-zinc-400;
 }
 
 .sidebar-settings-value {
   @apply text-xs text-zinc-500 bg-zinc-100 rounded px-1.5 py-0.5;
+}
+
+.sidebar-settings-value-danger {
+  color: white;
+  background-color: #cc241d;
 }
 
 .sidebar-settings-toggle {

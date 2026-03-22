@@ -43,6 +43,7 @@ export function useWasmRuntimeSettings(options: UseWasmRuntimeSettingsOptions) {
   const hasStoredWasmProviderSecret = ref(false)
   const wasmRuntimeModelIds = ref<string[]>([])
   const isSavingWasmSettings = ref(false)
+  const savedRuntimeMode = ref<RuntimeMode>('default')
   const runtimePolicyOptions = getWasmRuntimePolicyPresetOptions()
 
   let wasmModelRefreshToken = 0
@@ -83,6 +84,7 @@ export function useWasmRuntimeSettings(options: UseWasmRuntimeSettingsOptions) {
     try {
       const [draft, status] = await Promise.all([loadWasmRuntimeDraft(), getWasmRuntimeStatus()])
       wasmSettingsDraft.value = draft
+      savedRuntimeMode.value = draft.runtimeMode
       wasmRuntimeStatus.value = status
       void refreshWasmRuntimeModelOptions(draft)
       hasStoredWasmProviderSecret.value = await hasStoredWasmProviderConfig({
@@ -155,6 +157,21 @@ export function useWasmRuntimeSettings(options: UseWasmRuntimeSettingsOptions) {
   async function saveCurrentWasmRuntimeSettings(): Promise<void> {
     if (!options.enabled || isSavingWasmSettings.value) return
 
+    if (
+      wasmSettingsDraft.value.runtimeMode === 'chaos'
+      && savedRuntimeMode.value !== 'chaos'
+      && typeof window !== 'undefined'
+    ) {
+      const confirmed = window.confirm(
+        'Chaos mode enables high-risk browser capabilities. Approval-gated browser tools may inspect or script the current page context, including browser-visible storage and same-origin app state. Save anyway?',
+      )
+      if (!confirmed) {
+        wasmSettingsFeedback.value = 'Chaos mode change cancelled.'
+        wasmSettingsFeedbackTone.value = 'neutral'
+        return
+      }
+    }
+
     isSavingWasmSettings.value = true
     wasmSettingsFeedback.value = ''
     wasmSettingsFeedbackTone.value = 'neutral'
@@ -163,6 +180,7 @@ export function useWasmRuntimeSettings(options: UseWasmRuntimeSettingsOptions) {
       await saveWasmRuntimeDraft(wasmSettingsDraft.value)
       await options.refreshAll()
       await refreshWasmRuntimeSettings()
+      savedRuntimeMode.value = wasmSettingsDraft.value.runtimeMode
       wasmSettingsFeedback.value = 'Runtime settings saved.'
     } catch (error) {
       wasmSettingsFeedback.value = error instanceof Error ? error.message : String(error)

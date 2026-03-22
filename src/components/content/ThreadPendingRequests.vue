@@ -13,6 +13,13 @@
         <p v-if="describeRequestMeta(request)" class="pending-meta" :class="{ 'pending-meta-dark': isDarkTheme }">{{ describeRequestMeta(request) }}</p>
       </div>
 
+      <details v-if="formatRequestPayload(request)" class="pending-disclosure" :class="{ 'pending-disclosure-dark': isDarkTheme }">
+        <summary class="pending-disclosure-summary" :class="{ 'pending-disclosure-summary-dark': isDarkTheme }">
+          Request details
+        </summary>
+        <pre class="pending-disclosure-code" :class="{ 'pending-disclosure-code-dark': isDarkTheme }">{{ formatRequestPayload(request) }}</pre>
+      </details>
+
       <section v-if="request.method === 'item/commandExecution/requestApproval'" class="pending-actions">
         <button type="button" class="pending-button pending-button-primary" :class="{ 'pending-button-dark': isDarkTheme, 'pending-button-primary-dark': isDarkTheme }" @click="onRespondApproval(request.id, 'accept')">Accept</button>
         <button type="button" class="pending-button" :class="{ 'pending-button-dark': isDarkTheme }" @click="onRespondApproval(request.id, 'acceptForSession')">Accept for Session</button>
@@ -28,8 +35,8 @@
       </section>
 
       <section v-else-if="request.method === 'item/browserTool/requestApproval'" class="pending-actions">
-        <button type="button" class="pending-button pending-button-primary" :class="{ 'pending-button-dark': isDarkTheme, 'pending-button-primary-dark': isDarkTheme }" @click="onRespondBrowserToolApproval(request.id, 'allow_once')">Allow once</button>
-        <button type="button" class="pending-button" :class="{ 'pending-button-dark': isDarkTheme }" @click="onRespondBrowserToolApproval(request.id, 'allow_for_session')">Allow for session</button>
+        <button type="button" class="pending-button pending-button-primary pending-button-browser-allow" :class="{ 'pending-button-dark': isDarkTheme, 'pending-button-primary-dark': isDarkTheme, 'pending-button-browser-allow-dark': isDarkTheme }" @click="onRespondBrowserToolApproval(request.id, 'allow_once')">Allow once</button>
+        <button type="button" class="pending-button pending-button-browser-allow-secondary" :class="{ 'pending-button-dark': isDarkTheme, 'pending-button-browser-allow-secondary-dark': isDarkTheme }" @click="onRespondBrowserToolApproval(request.id, 'allow_for_session')">Allow for session</button>
         <button type="button" class="pending-button" :class="{ 'pending-button-dark': isDarkTheme }" @click="onRespondBrowserToolApproval(request.id, 'deny')">Deny</button>
         <button type="button" class="pending-button" :class="{ 'pending-button-dark': isDarkTheme }" @click="onRespondBrowserToolApproval(request.id, 'abort')">Abort</button>
       </section>
@@ -200,6 +207,15 @@ function describeRequestMeta(request: UiServerRequest): string {
   }
 
   return time ? `Requested at ${time}` : ''
+}
+
+function formatRequestPayload(request: UiServerRequest): string {
+  if (request.params == null) return ''
+  try {
+    return JSON.stringify(request.params, null, 2)
+  } catch {
+    return String(request.params)
+  }
 }
 
 function toolQuestionKey(requestId: number, questionId: string): string {
@@ -419,6 +435,34 @@ onBeforeUnmount(() => {
   @apply mt-3 flex flex-wrap gap-2;
 }
 
+.pending-disclosure {
+  @apply mt-3 rounded-xl border border-zinc-200 bg-zinc-50;
+}
+
+.pending-disclosure-dark {
+  @apply border-neutral-700 bg-neutral-900/70;
+}
+
+.pending-disclosure-summary {
+  @apply cursor-pointer list-none px-3 py-2 text-sm font-medium text-zinc-700;
+}
+
+.pending-disclosure-summary::-webkit-details-marker {
+  display: none;
+}
+
+.pending-disclosure-summary-dark {
+  @apply text-neutral-100;
+}
+
+.pending-disclosure-code {
+  @apply m-0 max-h-56 overflow-auto border-t border-zinc-200 px-3 py-3 text-xs leading-6 text-zinc-700 whitespace-pre-wrap break-all;
+}
+
+.pending-disclosure-code-dark {
+  @apply border-neutral-700 text-neutral-200;
+}
+
 .pending-button {
   @apply rounded-xl border border-zinc-300 bg-zinc-50 px-3 py-2 text-sm font-medium text-zinc-700 transition hover:bg-zinc-100;
 }
@@ -433,6 +477,31 @@ onBeforeUnmount(() => {
 
 .pending-button-primary-dark {
   @apply border-neutral-200 bg-neutral-200 text-neutral-900 hover:bg-white;
+}
+
+.pending-button-browser-allow {
+  @apply text-white;
+  border-color: #cc241d;
+  background-color: #cc241d;
+}
+
+.pending-button-browser-allow-dark {
+  @apply text-white;
+  border-color: #cc241d;
+  background-color: #cc241d;
+}
+
+.pending-button-browser-allow:hover,
+.pending-button-browser-allow-dark:hover {
+  background-color: #9d0006;
+}
+
+.pending-button-browser-allow-secondary {
+  @apply border-red-200 bg-red-50 text-red-800 hover:bg-red-100;
+}
+
+.pending-button-browser-allow-secondary-dark {
+  @apply border-red-900 bg-red-950/60 text-red-100 hover:bg-red-950/80;
 }
 
 .pending-user-input {
