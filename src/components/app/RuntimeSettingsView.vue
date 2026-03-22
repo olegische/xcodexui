@@ -15,22 +15,6 @@
       <div class="settings-form-grid">
         <label class="settings-form-row">
           <span class="settings-form-copy">
-            <span class="settings-form-title">Security mode</span>
-            <span class="settings-form-description">{{ selectedRuntimePolicy.description }}</span>
-          </span>
-          <select
-            :value="draft.runtimeMode"
-            class="settings-select"
-            @change="$emit('runtime-mode-change', ($event.target as HTMLSelectElement).value as RuntimeMode)"
-          >
-            <option v-for="option in runtimePolicyOptions" :key="option.runtimeMode" :value="option.runtimeMode">
-              {{ option.label }}
-            </option>
-          </select>
-        </label>
-
-        <label class="settings-form-row">
-          <span class="settings-form-copy">
             <span class="settings-form-title">Status</span>
             <span class="settings-form-description">{{ derivedRuntimeStatus.detail }}</span>
           </span>
@@ -119,6 +103,22 @@
             placeholder="Models load after API key is set"
             disabled
           />
+        </label>
+
+        <label class="settings-form-row">
+          <span class="settings-form-copy">
+            <span class="settings-form-title">Security mode</span>
+            <span class="settings-form-description">{{ selectedRuntimePolicy.description }}</span>
+          </span>
+          <select
+            :value="draft.runtimeMode"
+            class="settings-select"
+            @change="$emit('runtime-mode-change', ($event.target as HTMLSelectElement).value as RuntimeMode)"
+          >
+            <option v-for="option in runtimePolicyOptions" :key="option.runtimeMode" :value="option.runtimeMode">
+              {{ option.label }}
+            </option>
+          </select>
         </label>
       </div>
 
