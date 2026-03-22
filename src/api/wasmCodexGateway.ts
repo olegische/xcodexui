@@ -49,6 +49,13 @@ type WasmRuntimeRpcCaller = {
   requestTyped?: <T>(method: string, params: Record<string, unknown>) => Promise<T>
 }
 
+type NotificationListener = (value: RpcNotification) => void
+
+const notificationListeners = new Set<NotificationListener>()
+let runtimeNotificationUnsubscribe: (() => void) | null = null
+let runtimeNotificationSubscribePromise: Promise<void> | null = null
+const completionReconcileTimerByTurnId = new Map<string, number>()
+
 const THREAD_LIST_SOURCE_KINDS: ThreadSourceKind[] = [
   'cli',
   'vscode',
@@ -107,6 +114,97 @@ async function callWasmRpc<T>(method: string, params: Record<string, unknown>): 
     throw new Error(`wasm runtime does not support ${method}`)
   }
   return await caller.requestTyped<T>(method, params)
+}
+
+function emitNotification(notification: RpcNotification): void {
+  notificationListeners.forEach((listener) => {
+    try {
+      listener(notification)
+    } catch {
+      // Keep broadcasting even if one consumer throws.
+    }
+  })
+}
+
+function clearCompletionReconcile(turnId: string): void {
+  const timerId = completionReconcileTimerByTurnId.get(turnId)
+  if (typeof timerId === 'number' && typeof window !== 'undefined') {
+    window.clearTimeout(timerId)
+  }
+  completionReconcileTimerByTurnId.delete(turnId)
+}
+
+function readTurnRecordFromThread(payload: ThreadReadResponse, turnId: string): Record<string, unknown> | null {
+  const turns = Array.isArray(payload.thread?.turns) ? payload.thread.turns : []
+  for (const turn of turns) {
+    const record = asRecord(turn)
+    if (record && record.id === turnId) return record
+  }
+  return null
+}
+
+async function ensureRuntimeNotificationBridge(): Promise<void> {
+  if (runtimeNotificationUnsubscribe) return
+  if (runtimeNotificationSubscribePromise) return await runtimeNotificationSubscribePromise
+  runtimeNotificationSubscribePromise = (async () => {
+    const context = await getWasmRuntimeContext()
+    runtimeNotificationUnsubscribe = context.subscribe((notification) => {
+      if (notification.method === 'turn/completed') {
+        const params = asRecord(notification.params)
+        const turnRecord = asRecord(params?.turn)
+        const turnId = typeof turnRecord?.id === 'string' ? turnRecord.id : ''
+        if (turnId) clearCompletionReconcile(turnId)
+      }
+      emitNotification(notification)
+    })
+  })()
+  try {
+    await runtimeNotificationSubscribePromise
+  } finally {
+    runtimeNotificationSubscribePromise = null
+  }
+}
+
+function scheduleTurnCompletionReconcile(threadId: string, turnId: string): void {
+  if (!threadId || !turnId || typeof window === 'undefined') return
+  clearCompletionReconcile(turnId)
+  const pollDelaysMs = [80, 240, 600, 1400]
+
+  const pollAttempt = async (attemptIndex: number): Promise<void> => {
+    completionReconcileTimerByTurnId.delete(turnId)
+    try {
+      const payload = await readThreadRaw(threadId)
+      const turnRecord = readTurnRecordFromThread(payload, turnId)
+      const status = typeof turnRecord?.status === 'string' ? turnRecord.status : ''
+      if (turnRecord && status && status !== 'inProgress') {
+        // Workaround: very fast WASM turns can finish before the normal live notification
+        // path leaves the UI's "Thinking" state. A synthetic completion notification nudges
+        // the existing sync path to reconcile the persisted transcript without a page reload.
+        emitNotification({
+          method: 'turn/completed',
+          params: {
+            threadId,
+            turn: turnRecord,
+          },
+          atIso: new Date().toISOString(),
+        })
+        return
+      }
+    } catch {
+      // Ignore transient read failures and keep the normal notification path.
+    }
+    const nextDelay = pollDelaysMs[attemptIndex + 1]
+    if (typeof nextDelay !== 'number') return
+    const timerId = window.setTimeout(() => {
+      void pollAttempt(attemptIndex + 1)
+    }, nextDelay)
+    completionReconcileTimerByTurnId.set(turnId, timerId)
+  }
+
+  const initialTimerId = window.setTimeout(() => {
+    void pollAttempt(0)
+  }, pollDelaysMs[0])
+  completionReconcileTimerByTurnId.set(turnId, initialTimerId)
 }
 
 async function readStoredThreadSessionItemCount(threadId: string): Promise<number> {
@@ -501,14 +599,14 @@ export async function getThreadDetail(threadId: string): Promise<{ messages: UiM
 }
 
 export function subscribeCodexNotifications(onNotification: (value: RpcNotification) => void): () => void {
-  void getWasmRuntimeContext()
-  const unsubscribePromise = getWasmRuntimeContext().then((context) => context.subscribe(onNotification))
-  let settledUnsubscribe: (() => void) | null = null
-  void unsubscribePromise.then((cleanup) => {
-    settledUnsubscribe = cleanup
-  })
+  notificationListeners.add(onNotification)
+  void ensureRuntimeNotificationBridge()
   return () => {
-    settledUnsubscribe?.()
+    notificationListeners.delete(onNotification)
+    if (notificationListeners.size === 0) {
+      runtimeNotificationUnsubscribe?.()
+      runtimeNotificationUnsubscribe = null
+    }
   }
 }
 
@@ -681,7 +779,7 @@ export async function startThreadTurnRaw(
       typeof overrides?.effort === 'string' && overrides.effort.length > 0 ? overrides.effort : currentConfig.modelReasoningEffort,
   }
   await context.saveConfig(nextConfig)
-  return await context.runtime.turnStart({
+  const response = await context.runtime.turnStart({
     threadId,
     input,
     model: nextConfig.model || null,
@@ -689,6 +787,9 @@ export async function startThreadTurnRaw(
       ? nextConfig.modelReasoningEffort as ReasoningEffort
       : null,
   })
+  const turnId = typeof response.turn?.id === 'string' ? response.turn.id : ''
+  if (turnId) scheduleTurnCompletionReconcile(threadId, turnId)
+  return response
 }
 
 export async function interruptThreadTurn(threadId: string, turnId?: string): Promise<void> {
