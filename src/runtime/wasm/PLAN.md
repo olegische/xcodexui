@@ -45,10 +45,30 @@ The main intervention points are:
 - `/Users/olegromanchuk/Projects/xcodexui/src/runtime/wasm/settings.ts`
 - `/Users/olegromanchuk/Projects/xcodexui/src/runtime/wasm/storage.ts`
 - `/Users/olegromanchuk/Projects/xcodexui/src/api/wasmCodexGateway.ts`
+- `/Users/olegromanchuk/Projects/xcodexui/src/composables/useWasmRuntimeSettings.ts`
+- `/Users/olegromanchuk/Projects/xcodexui/src/components/app/RuntimeSettingsView.vue`
 - `/Users/olegromanchuk/Projects/xcodexui/src/App.vue`
 - `/Users/olegromanchuk/Projects/xcodexui/src/runtime/wasm/README.md`
 
 These are the real downstream integration points.
+
+After the app refactor, these files now have distinct roles:
+
+- `src/runtime/wasm/*`
+  - low-level runtime lifecycle
+  - config mapping
+  - storage integration
+- `src/api/wasmCodexGateway.ts`
+  - wasm runtime bridge and thread/runtime gateway
+- `src/composables/useWasmRuntimeSettings.ts`
+  - settings orchestration and async flows
+- `src/components/app/RuntimeSettingsView.vue`
+  - runtime settings form UI
+- `src/App.vue`
+  - route-level and prop/event wiring only
+
+The plan below should follow this split instead of assuming the root component
+owns the wasm settings logic directly.
 
 ## Contract Gaps In Current Client
 
@@ -111,6 +131,8 @@ Suggested local draft shape:
 Primary file:
 
 - `/Users/olegromanchuk/Projects/xcodexui/src/runtime/wasm/settings.ts`
+- `/Users/olegromanchuk/Projects/xcodexui/src/composables/useWasmRuntimeSettings.ts`
+- `/Users/olegromanchuk/Projects/xcodexui/src/components/app/RuntimeSettingsView.vue`
 
 ## 3. Direct Provider Fetch Currently Bypasses Runtime Policy
 
@@ -244,7 +266,8 @@ Required change:
 Primary files:
 
 - `/Users/olegromanchuk/Projects/xcodexui/src/runtime/wasm/settings.ts`
-- `/Users/olegromanchuk/Projects/xcodexui/src/App.vue`
+- `/Users/olegromanchuk/Projects/xcodexui/src/composables/useWasmRuntimeSettings.ts`
+- `/Users/olegromanchuk/Projects/xcodexui/src/components/app/RuntimeSettingsView.vue`
 
 ## 8. Blocked Runtime Errors Need First-Class UX
 
@@ -265,7 +288,8 @@ Required change:
 Primary files:
 
 - `/Users/olegromanchuk/Projects/xcodexui/src/api/wasmCodexGateway.ts`
-- `/Users/olegromanchuk/Projects/xcodexui/src/App.vue`
+- `/Users/olegromanchuk/Projects/xcodexui/src/composables/useWasmRuntimeSettings.ts`
+- `/Users/olegromanchuk/Projects/xcodexui/src/components/app/RuntimeSettingsView.vue`
 
 ## 9. Local Documentation Is Out Of Date
 
@@ -321,15 +345,33 @@ Must do:
 4. handle blocked/denied outcomes as expected policy results
 5. avoid hardcoded assumptions about dangerous tool availability
 
+### `/src/composables/useWasmRuntimeSettings.ts`
+
+Must do:
+
+1. expand the local settings orchestration to cover the full SDK config surface
+2. coordinate refresh/save/delete flows for `runtime_mode` and `browser_security`
+3. stop assuming provider settings are the only wasm-settings domain
+4. remove direct model-listing drift once runtime-safe discovery exists
+5. surface policy blocks and validation failures distinctly from generic errors
+
+### `/src/components/app/RuntimeSettingsView.vue`
+
+Must do:
+
+1. add UI controls for `runtimeMode`
+2. add UI controls for `browserSecurity`
+3. adjust provider settings UX to match strict validation rules
+4. show clearer risk copy for `default`, `demo`, `chaos`
+5. make policy limitations and approval behavior legible to the user
+
 ### `/src/App.vue`
 
 Must do:
 
-1. add UI for `runtimeMode`
-2. add UI for `browserSecurity`
-3. adjust provider settings UX to match strict validation rules
-4. show clearer risk copy for `default`, `demo`, `chaos`
-5. later render approval prompts through the existing global server-request UI
+1. keep only route-level wiring for the refactored wasm settings flow
+2. pass any newly required props and events into `RuntimeSettingsView`
+3. avoid reintroducing wasm-settings business logic into the root component
 
 ## Existing UI Infrastructure We Should Reuse
 
@@ -370,10 +412,11 @@ The wasm work should plug into this path, not bypass it.
 
 ### Phase D: UI Completion
 
-1. add runtime mode switch
-2. add browser security controls
-3. align provider editing UX with runtime policy
-4. refine risk and error messaging
+1. update `useWasmRuntimeSettings` for the broader config contract
+2. add runtime mode switch in `RuntimeSettingsView`
+3. add browser security controls in `RuntimeSettingsView`
+4. align provider editing UX with runtime policy
+5. refine risk and error messaging
 
 ## Non-Goals
 
