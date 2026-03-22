@@ -24,6 +24,48 @@ The relevant SDK contract now includes:
 
 Our current client implementation still reflects the older contract shape.
 
+## Status Snapshot
+
+This plan is now partly implemented.
+
+### Implemented
+
+- `runtimeMode` is now modeled in the local draft and saved through
+  `materializeCodexConfig(...)`
+- runtime policy presets were introduced via
+  `/Users/olegromanchuk/Projects/xcodexui/src/runtime/wasm/presets.ts`
+- saving or deleting runtime settings now invalidates the cached WASM runtime
+  context
+- runtime mode orchestration moved into
+  `/Users/olegromanchuk/Projects/xcodexui/src/composables/useWasmRuntimeSettings.ts`
+- runtime mode UI landed in
+  `/Users/olegromanchuk/Projects/xcodexui/src/components/app/RuntimeSettingsView.vue`
+- the refactored app architecture now routes runtime settings through the
+  composable and settings view instead of keeping the logic in `App.vue`
+
+### Still Missing
+
+- direct provider model discovery still uses client-side `fetch()` and can drift
+  from runtime transport policy
+- `requestBrowserToolApproval` is still not wired into the runtime bootstrap
+- WASM pending server request plumbing is still stubbed in
+  `wasmCodexGateway.ts`
+- `browser_security` is currently preset-driven in the client, but not exposed
+  as an explicit editable settings model
+- local runtime docs still need to be aligned with the new SDK contract
+
+### Plan Semantics
+
+The sections below describe the full target state.
+
+Items listed in the plan may therefore be:
+
+- already implemented
+- partially implemented
+- still open
+
+The file is intended to remain a current roadmap, not just a historical record.
+
 ## Goal
 
 Bring `xcodexui` into alignment with the current WASM SDK contract without
@@ -116,6 +158,11 @@ Required change:
 - map UI state to the SDK config shape correctly
 - preserve these fields through load, edit, save, and delete flows
 
+Current implementation note:
+
+- `runtimeMode` is already implemented
+- `browserSecurity` is not yet represented as an explicit editable draft object
+
 Important detail:
 
 - UI draft may remain camelCase if that is more ergonomic
@@ -156,6 +203,11 @@ Required change:
 - remove or replace the direct provider fetch path
 - route model listing through a runtime-validated path whenever possible
 
+Current implementation note:
+
+- this is still open
+- `listWasmModelsForDraft()` still performs direct network access in the client
+
 Acceptable fallback only if needed temporarily:
 
 - disable model discovery for draft-only values until config is saved and loaded
@@ -184,6 +236,11 @@ Preferred downstream behavior:
 - implement `requestBrowserToolApproval`
 - route it into the existing pending server request UI flow
 
+Current implementation note:
+
+- this is still open
+- current client behavior remains effectively fail-closed
+
 Primary file:
 
 - `/Users/olegromanchuk/Projects/xcodexui/src/runtime/wasm/runtime.ts`
@@ -209,6 +266,11 @@ Required change:
 - store pending requests in wasm mode
 - surface them through the same gateway contract used elsewhere
 - send reply decisions back to the runtime
+
+Current implementation note:
+
+- this is still open
+- `replyToServerRequest(...)` and `getPendingServerRequests()` are still stubbed
 
 This is not a future enhancement.
 It is part of matching the current SDK contract.
@@ -262,6 +324,12 @@ Required change:
   - keep custom base URL editing
   - expose the related `browser_security` controls
   - explain that localhost and private-network access are runtime-gated
+
+Current implementation note:
+
+- runtime mode preset UX exists
+- `browser_security` is not yet exposed as direct user-editable controls
+- provider URL UX still needs final alignment with runtime policy
 
 Primary files:
 
@@ -317,11 +385,11 @@ Primary file:
 
 Must do:
 
-1. extend `WasmRuntimeDraft`
-2. add local `browserSecurity` draft structure
-3. load new fields from stored config
-4. save new fields into `materializeCodexConfig(...)`
-5. preserve new fields through provider/transport changes
+1. keep `runtimeMode` support aligned with the SDK contract
+2. add local `browserSecurity` draft structure if we want explicit user editing
+3. continue loading new security fields from stored config
+4. continue saving new security fields into `materializeCodexConfig(...)`
+5. preserve security fields through provider/transport changes
 6. remove direct network policy drift in model discovery
 7. update validation and user-facing status logic if needed
 
@@ -329,8 +397,8 @@ Must do:
 
 Must do:
 
-1. add runtime invalidation and recreation API
-2. reset cached runtime context after policy-sensitive config save
+1. keep runtime invalidation and recreation API correct
+2. keep resetting cached runtime context after policy-sensitive config save
 3. wire `requestBrowserToolApproval`
 4. keep `requestUserInput` behavior aligned with runtime needs
 5. reduce instruction drift against runtime capability surface
@@ -349,8 +417,8 @@ Must do:
 
 Must do:
 
-1. expand the local settings orchestration to cover the full SDK config surface
-2. coordinate refresh/save/delete flows for `runtime_mode` and `browser_security`
+1. keep runtime mode orchestration aligned with the SDK contract
+2. expand orchestration to cover explicit `browser_security` editing if needed
 3. stop assuming provider settings are the only wasm-settings domain
 4. remove direct model-listing drift once runtime-safe discovery exists
 5. surface policy blocks and validation failures distinctly from generic errors
@@ -359,8 +427,8 @@ Must do:
 
 Must do:
 
-1. add UI controls for `runtimeMode`
-2. add UI controls for `browserSecurity`
+1. keep UI controls for `runtimeMode` aligned with the runtime presets
+2. add UI controls for `browserSecurity` if direct editing is intended
 3. adjust provider settings UX to match strict validation rules
 4. show clearer risk copy for `default`, `demo`, `chaos`
 5. make policy limitations and approval behavior legible to the user
