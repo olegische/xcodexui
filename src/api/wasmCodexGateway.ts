@@ -22,6 +22,10 @@ import {
   type WasmThreadIndexEntry,
 } from '../runtime/wasm/threadIndex'
 import * as wasmStorage from '../runtime/wasm/storage'
+import {
+  getPendingBrowserToolApprovalRequests,
+  replyToBrowserToolApprovalRequest,
+} from '../runtime/wasm/browserToolApprovalBridge'
 
 type CurrentModelConfig = {
   model: string
@@ -509,14 +513,14 @@ export function subscribeCodexNotifications(onNotification: (value: RpcNotificat
 }
 
 export async function replyToServerRequest(
-  _id: number,
-  _payload: { result?: unknown; error?: { code?: number; message: string } },
+  id: number,
+  payload: { result?: unknown; error?: { code?: number; message: string } },
 ): Promise<void> {
-  return
+  await replyToBrowserToolApprovalRequest(id, payload)
 }
 
 export async function getPendingServerRequests(): Promise<unknown[]> {
-  return []
+  return await getPendingBrowserToolApprovalRequests()
 }
 
 export async function resumeThread(threadId: string): Promise<void> {

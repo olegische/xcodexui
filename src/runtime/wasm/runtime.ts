@@ -1,24 +1,19 @@
 import {
   createBrowserCodexRuntimeContext,
-  createIndexedDbCodexStorage,
   createLocalStorageWorkspaceAdapter,
-  DEFAULT_CODEX_CONFIG,
   activeProviderApiKey,
-  formatError,
   getActiveProvider,
 } from 'xcodex-runtime'
 import type {
   AuthState,
   BrowserCodexProtocolClient,
-  BrowserRuntimeContext,
-  BrowserRuntimeStorage,
   CodexCompatibleConfig,
   ModelPreset,
-  StoredThreadSession,
-  StoredThreadSessionMetadata,
 } from 'xcodex-runtime/types'
 import type { RpcNotification } from '../../api/codexRpcClient'
 import { BROWSER_WORKSPACE_ROOT } from '../../config/runtime'
+import { requestBrowserToolApproval, subscribeBrowserToolApprovalNotifications } from './browserToolApprovalBridge'
+import { wasmRuntimeStorage } from './storage'
 
 type WasmBrowserRuntime = BrowserCodexProtocolClient & {
   loadAuthState(): Promise<AuthState | null>
@@ -93,31 +88,6 @@ const XCODEX_WASM_BASE_INSTRUCTIONS = [
   '- [XRouter](https://github.com/olegische/xrouter)',
 ].join('\n')
 
-const storage: BrowserRuntimeStorage<
-  AuthState,
-  CodexCompatibleConfig,
-  StoredThreadSession,
-  StoredThreadSessionMetadata
-> = createIndexedDbCodexStorage({
-  dbName: 'codex-wasm-browser-terminal',
-  dbVersion: 6,
-  defaultConfig: DEFAULT_CODEX_CONFIG,
-  normalizeConfig(config) {
-    return structuredClone(config)
-  },
-  legacySessionStoreName: 'sessions',
-  keys: {
-    providerConfig: 'currentProviderConfig',
-    userConfig: 'currentUserConfig',
-  },
-  getSessionId(session) {
-    return session.metadata.threadId
-  },
-  getSessionMetadata(session) {
-    return session.metadata
-  },
-})
-
 export async function getWasmRuntimeContext(): Promise<WasmRuntimeContext> {
   if (runtimeContextPromise) {
     return await runtimeContextPromise
@@ -126,7 +96,7 @@ export async function getWasmRuntimeContext(): Promise<WasmRuntimeContext> {
   runtimeContextPromise = (async () => {
     const context = await createBrowserCodexRuntimeContext({
       cwd: BROWSER_WORKSPACE_ROOT,
-      storage,
+      storage: wasmRuntimeStorage,
       workspace: createLocalStorageWorkspaceAdapter({
         rootPath: BROWSER_WORKSPACE_ROOT,
       }),
@@ -158,6 +128,7 @@ export async function getWasmRuntimeContext(): Promise<WasmRuntimeContext> {
           requiresOpenaiAuth: false,
         }
       },
+      requestBrowserToolApproval,
       requestUserInput: async () => ({ answers: [] }),
     })
 
@@ -168,13 +139,18 @@ export async function getWasmRuntimeContext(): Promise<WasmRuntimeContext> {
       loadConfig: context.loadConfig,
       saveConfig: context.saveConfig,
       subscribe(listener) {
-        return runtime.subscribeToNotifications((notification: { method: string; params: unknown }) => {
+        const unsubscribeRuntime = runtime.subscribeToNotifications((notification: { method: string; params: unknown }) => {
           listener({
             method: notification.method,
             params: notification.params,
             atIso: new Date().toISOString(),
           })
         })
+        const unsubscribeBridge = subscribeBrowserToolApprovalNotifications(listener)
+        return () => {
+          unsubscribeRuntime()
+          unsubscribeBridge()
+        }
       },
     }
   })()

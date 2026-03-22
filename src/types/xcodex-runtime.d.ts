@@ -335,6 +335,38 @@ declare module 'xcodex-runtime/types' {
     }>
   }
 
+  export type BrowserToolApprovalKind =
+    | 'code_execution'
+    | 'network'
+    | 'navigation'
+    | 'mutation'
+    | 'sensitive_read'
+
+  export type BrowserToolApprovalOption =
+    | 'allow_once'
+    | 'allow_for_session'
+    | 'deny'
+    | 'abort'
+
+  export type BrowserToolApprovalRequest = {
+    approvalId: string
+    toolName: string
+    canonicalToolName: string
+    requiredScopes: string[]
+    runtimeMode: 'default' | 'demo' | 'chaos'
+    origin: string
+    displayOrigin: string
+    targetOrigin: string | null
+    targetUrl: string | null
+    approvalKind: BrowserToolApprovalKind
+    reason: string
+    grantOptions: BrowserToolApprovalOption[]
+  }
+
+  export type BrowserToolApprovalResponse = {
+    decision: BrowserToolApprovalOption
+  }
+
   export type BrowserRuntimeNotification = {
     method: string
     params: unknown
@@ -452,6 +484,9 @@ declare module 'xcodex-runtime/types' {
         value: unknown
       }>
     }>
+    requestBrowserToolApproval?: (
+      request: import('xcodex-runtime/types').BrowserToolApprovalRequest,
+    ) => Promise<import('xcodex-runtime/types').BrowserToolApprovalResponse>
     readAccount?: (args: {
       authState: import('xcodex-runtime/types').AuthState | null
       config: import('xcodex-runtime/types').CodexCompatibleConfig

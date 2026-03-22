@@ -37,6 +37,13 @@
                 <button type="button" class="request-button" @click="onRespondApproval(request.id, 'cancel')">Cancel</button>
               </section>
 
+              <section v-else-if="request.method === 'item/browserTool/requestApproval'" class="request-actions">
+                <button type="button" class="request-button request-button-primary" @click="onRespondBrowserToolApproval(request.id, 'allow_once')">Allow Once</button>
+                <button type="button" class="request-button" @click="onRespondBrowserToolApproval(request.id, 'allow_for_session')">Allow for Session</button>
+                <button type="button" class="request-button" @click="onRespondBrowserToolApproval(request.id, 'deny')">Deny</button>
+                <button type="button" class="request-button" @click="onRespondBrowserToolApproval(request.id, 'abort')">Abort</button>
+              </section>
+
               <section v-else-if="request.method === 'item/tool/requestUserInput'" class="request-user-input">
                 <div
                   v-for="question in readToolQuestions(request)"
@@ -756,6 +763,16 @@ function onQuestionOtherAnswerInput(requestId: number, questionId: string, event
 }
 
 function onRespondApproval(requestId: number, decision: 'accept' | 'acceptForSession' | 'decline' | 'cancel'): void {
+  emit('respondServerRequest', {
+    id: requestId,
+    result: { decision },
+  })
+}
+
+function onRespondBrowserToolApproval(
+  requestId: number,
+  decision: 'allow_once' | 'allow_for_session' | 'deny' | 'abort',
+): void {
   emit('respondServerRequest', {
     id: requestId,
     result: { decision },
