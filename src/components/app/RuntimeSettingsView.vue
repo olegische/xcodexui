@@ -122,13 +122,6 @@
         </label>
       </div>
 
-      <div v-if="draft.runtimeMode === 'chaos'" class="settings-chaos-warning">
-        <strong class="settings-chaos-warning-title">Chaos mode warning</strong>
-        <p class="settings-chaos-warning-body">
-          This mode enables higher-risk browser capabilities. Approval-gated tools may inspect or script the current page context, including browser-visible storage, DOM state, and same-origin app state.
-        </p>
-      </div>
-
       <div class="settings-actions">
         <button class="settings-primary-action" type="button" :disabled="isSavingWasmSettings" @click="$emit('save')">
           {{ isSavingWasmSettings ? 'Saving…' : 'Save runtime' }}
@@ -139,6 +132,13 @@
         <button v-if="hasStoredWasmProviderSecret" class="settings-danger-action" type="button" :disabled="isSavingWasmSettings" @click="$emit('delete-config')">
           Delete config
         </button>
+      </div>
+
+      <div v-if="draft.runtimeMode === 'chaos'" class="settings-chaos-warning">
+        <strong class="settings-chaos-warning-title">Chaos mode warning</strong>
+        <p class="settings-chaos-warning-body">
+          This mode enables higher-risk browser capabilities. Approval-gated tools may inspect or script the current page context, including browser-visible storage, DOM state, and same-origin app state.
+        </p>
       </div>
 
       <p v-if="wasmSettingsFeedback" class="settings-inline-note" :class="{ 'is-error': wasmSettingsFeedbackTone === 'error' }">
