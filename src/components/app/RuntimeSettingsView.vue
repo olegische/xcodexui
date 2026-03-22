@@ -146,9 +146,6 @@
       <p v-if="wasmSettingsFeedback" class="settings-inline-note" :class="{ 'is-error': wasmSettingsFeedbackTone === 'error' }">
         {{ wasmSettingsFeedback }}
       </p>
-      <p class="settings-inline-note">
-        Browser security allowlists are preset by the selected mode and current app origin. Dangerous browser tools fail closed until explicit approval mediation is added.
-      </p>
     </div>
   </section>
 </template>
