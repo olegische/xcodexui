@@ -6,8 +6,17 @@
         <span>Back to app</span>
       </button>
       <div class="runtime-settings-heading">
-        <h2 class="runtime-settings-title">Runtime</h2>
-        <p class="runtime-settings-subtitle">Browser-hosted XCodex WASM runtime configuration. Only the current provider config is stored locally in browser IndexedDB and handled directly by the browser runtime.</p>
+        <div class="runtime-settings-title-row">
+          <h2 class="runtime-settings-title">Runtime</h2>
+          <span v-if="draft.runtimeMode === 'chaos'" class="runtime-settings-mode-badge">Chaos</span>
+        </div>
+        <p class="runtime-settings-subtitle">
+          {{
+            draft.runtimeMode === 'chaos'
+              ? 'This mode enables higher-risk browser capabilities. Approval-gated tools may inspect or script the current page context, including browser-visible storage, DOM state, and same-origin app state.'
+              : 'Browser-hosted XCodex WASM runtime configuration. Only the current provider config is stored locally in browser IndexedDB and handled directly by the browser runtime.'
+          }}
+        </p>
       </div>
     </div>
 
@@ -134,13 +143,6 @@
         </button>
       </div>
 
-      <div v-if="draft.runtimeMode === 'chaos'" class="settings-chaos-warning">
-        <strong class="settings-chaos-warning-title">Chaos mode warning</strong>
-        <p class="settings-chaos-warning-body">
-          This mode enables higher-risk browser capabilities. Approval-gated tools may inspect or script the current page context, including browser-visible storage, DOM state, and same-origin app state.
-        </p>
-      </div>
-
       <p v-if="wasmSettingsFeedback" class="settings-inline-note" :class="{ 'is-error': wasmSettingsFeedbackTone === 'error' }">
         {{ wasmSettingsFeedback }}
       </p>
@@ -207,8 +209,17 @@ defineEmits<{
   @apply flex flex-col gap-1;
 }
 
+.runtime-settings-title-row {
+  @apply flex items-center gap-3;
+}
+
 .runtime-settings-title {
   @apply m-0 text-[1.45rem] font-semibold tracking-tight text-zinc-950;
+}
+
+.runtime-settings-mode-badge {
+  @apply inline-flex items-center rounded-xl px-3 py-1 text-lg font-semibold leading-none text-white;
+  background: #e33422;
 }
 
 .runtime-settings-subtitle {
@@ -275,20 +286,6 @@ defineEmits<{
 
 .settings-actions {
   @apply flex justify-end gap-2 px-5 py-3;
-}
-
-.settings-chaos-warning {
-  @apply mx-5 my-4 rounded-[1rem] border px-4 py-3;
-  border-color: #cc241d;
-  background-color: #cc241d;
-}
-
-.settings-chaos-warning-title {
-  @apply block text-[0.82rem] font-semibold text-white;
-}
-
-.settings-chaos-warning-body {
-  @apply mt-1 m-0 text-[0.82rem] leading-6 text-white;
 }
 
 .settings-primary-action {
