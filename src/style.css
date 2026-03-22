@@ -314,6 +314,10 @@
   @apply border-neutral-600 bg-neutral-800/95;
 }
 
+:root.dark .organize-menu-trigger {
+  @apply text-neutral-500 hover:bg-neutral-800 hover:text-neutral-300;
+}
+
 :root.dark .organize-menu-item {
   @apply text-neutral-300 hover:bg-neutral-700;
 }
@@ -326,8 +330,16 @@
   @apply border-neutral-600 bg-neutral-800;
 }
 
+:root.dark .project-menu-trigger {
+  @apply text-neutral-500 hover:bg-neutral-800 hover:text-neutral-300;
+}
+
 :root.dark .project-menu-item {
   @apply text-neutral-300 hover:bg-neutral-700;
+}
+
+:root.dark .thread-start-button {
+  @apply text-neutral-400 hover:bg-neutral-700 hover:text-neutral-200;
 }
 
 :root.dark .thread-menu-panel {
@@ -343,7 +355,7 @@
 }
 
 :root.dark .thread-menu-trigger {
-  @apply text-neutral-400;
+  @apply text-neutral-500 hover:bg-neutral-800 hover:text-neutral-300;
 }
 
 :root.dark .rename-thread-panel {
