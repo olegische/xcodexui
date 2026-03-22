@@ -7,12 +7,10 @@
         :active-thread-id="composerThreadContextId"
         :scroll-state="selectedThreadScrollState"
         :live-overlay="liveOverlay"
-        :pending-requests="selectedThreadServerRequests"
         :is-turn-in-progress="isSelectedThreadInProgress"
         :allow-rollback="!isWasmRuntime"
         :is-rolling-back="isRollingBack"
         @update-scroll-state="$emit('update-scroll-state', $event)"
-        @respond-server-request="$emit('respond-server-request', $event)"
         @rollback="$emit('rollback', $event)"
       />
     </div>
@@ -32,6 +30,11 @@
           Open runtime settings
         </button>
       </div>
+      <ThreadPendingRequests
+        v-else-if="selectedThreadServerRequests.length > 0"
+        :pending-requests="selectedThreadServerRequests"
+        @respond-server-request="$emit('respond-server-request', $event)"
+      />
       <ThreadComposer
         v-else
         :active-thread-id="composerThreadContextId"
@@ -62,6 +65,7 @@
 import QueuedMessages from '../content/QueuedMessages.vue'
 import ThreadComposer from '../content/ThreadComposer.vue'
 import ThreadConversation from '../content/ThreadConversation.vue'
+import ThreadPendingRequests from '../content/ThreadPendingRequests.vue'
 import type { SkillInfo } from '../../api/codexGateway'
 import type {
   ReasoningEffort,

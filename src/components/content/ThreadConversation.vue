@@ -3,93 +3,13 @@
     <p v-if="isLoading" class="conversation-loading">Loading messages...</p>
 
     <p
-      v-else-if="messages.length === 0 && pendingRequests.length === 0 && !liveOverlay"
+      v-else-if="messages.length === 0 && !liveOverlay"
       class="conversation-empty"
     >
       No messages in this thread yet.
     </p>
 
     <ul v-else ref="conversationListRef" class="conversation-list" @scroll="onConversationScroll">
-      <li
-        v-for="request in pendingRequests"
-        :key="`server-request:${request.id}`"
-        class="conversation-item conversation-item-request"
-      >
-        <div class="message-row">
-          <div class="message-stack">
-            <article class="request-card">
-              <p class="request-title">{{ request.method }}</p>
-              <p class="request-meta">Request #{{ request.id }} · {{ formatIsoTime(request.receivedAtIso) }}</p>
-
-              <p v-if="readRequestReason(request)" class="request-reason">{{ readRequestReason(request) }}</p>
-
-              <section v-if="request.method === 'item/commandExecution/requestApproval'" class="request-actions">
-                <button type="button" class="request-button request-button-primary" @click="onRespondApproval(request.id, 'accept')">Accept</button>
-                <button type="button" class="request-button" @click="onRespondApproval(request.id, 'acceptForSession')">Accept for Session</button>
-                <button type="button" class="request-button" @click="onRespondApproval(request.id, 'decline')">Decline</button>
-                <button type="button" class="request-button" @click="onRespondApproval(request.id, 'cancel')">Cancel</button>
-              </section>
-
-              <section v-else-if="request.method === 'item/fileChange/requestApproval'" class="request-actions">
-                <button type="button" class="request-button request-button-primary" @click="onRespondApproval(request.id, 'accept')">Accept</button>
-                <button type="button" class="request-button" @click="onRespondApproval(request.id, 'acceptForSession')">Accept for Session</button>
-                <button type="button" class="request-button" @click="onRespondApproval(request.id, 'decline')">Decline</button>
-                <button type="button" class="request-button" @click="onRespondApproval(request.id, 'cancel')">Cancel</button>
-              </section>
-
-              <section v-else-if="request.method === 'item/browserTool/requestApproval'" class="request-actions">
-                <button type="button" class="request-button request-button-primary" @click="onRespondBrowserToolApproval(request.id, 'allow_once')">Allow Once</button>
-                <button type="button" class="request-button" @click="onRespondBrowserToolApproval(request.id, 'allow_for_session')">Allow for Session</button>
-                <button type="button" class="request-button" @click="onRespondBrowserToolApproval(request.id, 'deny')">Deny</button>
-                <button type="button" class="request-button" @click="onRespondBrowserToolApproval(request.id, 'abort')">Abort</button>
-              </section>
-
-              <section v-else-if="request.method === 'item/tool/requestUserInput'" class="request-user-input">
-                <div
-                  v-for="question in readToolQuestions(request)"
-                  :key="`${request.id}:${question.id}`"
-                  class="request-question"
-                >
-                  <p class="request-question-title">{{ question.header || question.question }}</p>
-                  <p v-if="question.header && question.question" class="request-question-text">{{ question.question }}</p>
-                  <select
-                    class="request-select"
-                    :value="readQuestionAnswer(request.id, question.id, question.options[0] || '')"
-                    @change="onQuestionAnswerChange(request.id, question.id, $event)"
-                  >
-                    <option v-for="option in question.options" :key="`${request.id}:${question.id}:${option}`" :value="option">
-                      {{ option }}
-                    </option>
-                  </select>
-                  <input
-                    v-if="question.isOther"
-                    class="request-input"
-                    type="text"
-                    :value="readQuestionOtherAnswer(request.id, question.id)"
-                    placeholder="Other answer"
-                    @input="onQuestionOtherAnswerInput(request.id, question.id, $event)"
-                  />
-                </div>
-
-                <button type="button" class="request-button request-button-primary" @click="onRespondToolRequestUserInput(request)">
-                  Submit Answers
-                </button>
-              </section>
-
-              <section v-else-if="request.method === 'item/tool/call'" class="request-actions">
-                <button type="button" class="request-button request-button-primary" @click="onRespondToolCallFailure(request.id)">Fail Tool Call</button>
-                <button type="button" class="request-button" @click="onRespondToolCallSuccess(request.id)">Success (Empty)</button>
-              </section>
-
-              <section v-else class="request-actions">
-                <button type="button" class="request-button request-button-primary" @click="onRespondEmptyResult(request.id)">Return Empty Result</button>
-                <button type="button" class="request-button" @click="onRejectUnknownRequest(request.id)">Reject Request</button>
-              </section>
-            </article>
-          </div>
-        </div>
-      </li>
-
       <li
         v-for="message in messages"
         :key="message.id"
@@ -287,7 +207,7 @@
 
 <script setup lang="ts">
 import { nextTick, onBeforeUnmount, ref, watch } from 'vue'
-import type { ThreadScrollState, UiLiveOverlay, UiMessage, UiServerRequest } from '../../types/codex'
+import type { ThreadScrollState, UiLiveOverlay, UiMessage } from '../../types/codex'
 import IconTablerX from '../icons/IconTablerX.vue'
 import IconTablerArrowBackUp from '../icons/IconTablerArrowBackUp.vue'
 
@@ -438,7 +358,6 @@ function getCommandsForWorked(messages: UiMessage[], workedIndex: number): UiMes
 
 const props = defineProps<{
   messages: UiMessage[]
-  pendingRequests: UiServerRequest[]
   liveOverlay: UiLiveOverlay | null
   isLoading: boolean
   activeThreadId: string
@@ -450,15 +369,12 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   updateScrollState: [payload: { threadId: string; state: ThreadScrollState }]
-  respondServerRequest: [payload: { id: number; result?: unknown; error?: { code?: number; message: string } }]
   rollback: [payload: { turnIndex: number }]
 }>()
 
 const conversationListRef = ref<HTMLElement | null>(null)
 const bottomAnchorRef = ref<HTMLElement | null>(null)
 const modalImageUrl = ref('')
-const toolQuestionAnswers = ref<Record<string, string>>({})
-const toolQuestionOtherAnswers = ref<Record<string, string>>({})
 const BOTTOM_THRESHOLD_PX = 16
 type InlineSegment =
   | { kind: 'text'; value: string }
@@ -473,14 +389,6 @@ let bottomLockFrame = 0
 let bottomLockFramesLeft = 0
 const trackedPendingImages = new WeakSet<HTMLImageElement>()
 const failedMarkdownImageKeys = ref<Set<string>>(new Set())
-
-type ParsedToolQuestion = {
-  id: string
-  header: string
-  question: string
-  isOther: boolean
-  options: string[]
-}
 
 function isFilePath(value: string): boolean {
   if (!value || /\s/u.test(value)) return false
@@ -682,160 +590,6 @@ function asRecord(value: unknown): Record<string, unknown> | null {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : null
-}
-
-function formatIsoTime(value: string): string {
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return value
-  return date.toLocaleTimeString()
-}
-
-function readRequestReason(request: UiServerRequest): string {
-  const params = asRecord(request.params)
-  const reason = params?.reason
-  return typeof reason === 'string' ? reason.trim() : ''
-}
-
-function toolQuestionKey(requestId: number, questionId: string): string {
-  return `${String(requestId)}:${questionId}`
-}
-
-function readToolQuestions(request: UiServerRequest): ParsedToolQuestion[] {
-  const params = asRecord(request.params)
-  const questions = Array.isArray(params?.questions) ? params.questions : []
-  const parsed: ParsedToolQuestion[] = []
-
-  for (const row of questions) {
-    const question = asRecord(row)
-    if (!question) continue
-    const id = typeof question.id === 'string' ? question.id : ''
-    if (!id) continue
-
-    const options = Array.isArray(question.options)
-      ? question.options
-        .map((option) => asRecord(option))
-        .map((option) => option?.label)
-        .filter((option): option is string => typeof option === 'string' && option.length > 0)
-      : []
-
-    parsed.push({
-      id,
-      header: typeof question.header === 'string' ? question.header : '',
-      question: typeof question.question === 'string' ? question.question : '',
-      isOther: question.isOther === true,
-      options,
-    })
-  }
-
-  return parsed
-}
-
-function readQuestionAnswer(requestId: number, questionId: string, fallback: string): string {
-  const key = toolQuestionKey(requestId, questionId)
-  const saved = toolQuestionAnswers.value[key]
-  if (typeof saved === 'string' && saved.length > 0) return saved
-  return fallback
-}
-
-function readQuestionOtherAnswer(requestId: number, questionId: string): string {
-  const key = toolQuestionKey(requestId, questionId)
-  return toolQuestionOtherAnswers.value[key] ?? ''
-}
-
-function onQuestionAnswerChange(requestId: number, questionId: string, event: Event): void {
-  const target = event.target
-  if (!(target instanceof HTMLSelectElement)) return
-  const key = toolQuestionKey(requestId, questionId)
-  toolQuestionAnswers.value = {
-    ...toolQuestionAnswers.value,
-    [key]: target.value,
-  }
-}
-
-function onQuestionOtherAnswerInput(requestId: number, questionId: string, event: Event): void {
-  const target = event.target
-  if (!(target instanceof HTMLInputElement)) return
-  const key = toolQuestionKey(requestId, questionId)
-  toolQuestionOtherAnswers.value = {
-    ...toolQuestionOtherAnswers.value,
-    [key]: target.value,
-  }
-}
-
-function onRespondApproval(requestId: number, decision: 'accept' | 'acceptForSession' | 'decline' | 'cancel'): void {
-  emit('respondServerRequest', {
-    id: requestId,
-    result: { decision },
-  })
-}
-
-function onRespondBrowserToolApproval(
-  requestId: number,
-  decision: 'allow_once' | 'allow_for_session' | 'deny' | 'abort',
-): void {
-  emit('respondServerRequest', {
-    id: requestId,
-    result: { decision },
-  })
-}
-
-function onRespondToolRequestUserInput(request: UiServerRequest): void {
-  const questions = readToolQuestions(request)
-  const answers: Record<string, { answers: string[] }> = {}
-
-  for (const question of questions) {
-    const selected = readQuestionAnswer(request.id, question.id, question.options[0] || '')
-    const other = readQuestionOtherAnswer(request.id, question.id).trim()
-    const values = [selected, other].map((value) => value.trim()).filter((value) => value.length > 0)
-    answers[question.id] = { answers: values }
-  }
-
-  emit('respondServerRequest', {
-    id: request.id,
-    result: { answers },
-  })
-}
-
-function onRespondToolCallFailure(requestId: number): void {
-  emit('respondServerRequest', {
-    id: requestId,
-    result: {
-      success: false,
-      contentItems: [
-        {
-          type: 'inputText',
-          text: 'Tool call rejected from codex-web-local UI.',
-        },
-      ],
-    },
-  })
-}
-
-function onRespondToolCallSuccess(requestId: number): void {
-  emit('respondServerRequest', {
-    id: requestId,
-    result: {
-      success: true,
-      contentItems: [],
-    },
-  })
-}
-
-function onRespondEmptyResult(requestId: number): void {
-  emit('respondServerRequest', {
-    id: requestId,
-    result: {},
-  })
-}
-
-function onRejectUnknownRequest(requestId: number): void {
-  emit('respondServerRequest', {
-    id: requestId,
-    error: {
-      code: -32000,
-      message: 'Rejected from codex-web-local UI.',
-    },
-  })
 }
 
 function canRollbackMessage(message: UiMessage): boolean {
@@ -1100,58 +854,6 @@ onBeforeUnmount(() => {
 
 .message-stack {
   @apply flex flex-col w-full;
-}
-
-.request-card {
-  @apply w-full max-w-180 rounded-xl border border-amber-300 bg-amber-50 px-3 sm:px-4 py-2 sm:py-3 flex flex-col gap-2;
-}
-
-.request-title {
-  @apply m-0 text-sm leading-5 font-semibold text-amber-900;
-}
-
-.request-meta {
-  @apply m-0 text-xs leading-4 text-amber-700;
-}
-
-.request-reason {
-  @apply m-0 text-sm leading-5 text-amber-900 whitespace-pre-wrap;
-}
-
-.request-actions {
-  @apply flex flex-wrap gap-1.5 sm:gap-2;
-}
-
-.request-button {
-  @apply rounded-md border border-amber-300 bg-white px-3 py-1.5 text-xs text-amber-900 hover:bg-amber-100 transition;
-}
-
-.request-button-primary {
-  @apply border-amber-600 bg-amber-600 text-amber-50 hover:bg-amber-700;
-}
-
-.request-user-input {
-  @apply flex flex-col gap-3;
-}
-
-.request-question {
-  @apply flex flex-col gap-1;
-}
-
-.request-question-title {
-  @apply m-0 text-sm leading-5 font-medium text-amber-900;
-}
-
-.request-question-text {
-  @apply m-0 text-xs leading-4 text-amber-800;
-}
-
-.request-select {
-  @apply h-8 rounded-md border border-amber-300 bg-white px-2 text-sm text-amber-900;
-}
-
-.request-input {
-  @apply h-8 rounded-md border border-amber-300 bg-white px-2 text-sm text-amber-900 placeholder:text-amber-500;
 }
 
 .live-overlay-inline {

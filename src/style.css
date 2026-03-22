@@ -426,30 +426,6 @@
   @apply bg-neutral-700;
 }
 
-:root.dark .request-card {
-  @apply border-amber-800 bg-amber-950/35;
-}
-
-:root.dark .request-title {
-  @apply text-amber-100;
-}
-
-:root.dark .request-meta {
-  @apply text-amber-300;
-}
-
-:root.dark .request-reason {
-  @apply text-amber-100;
-}
-
-:root.dark .request-button {
-  @apply border-amber-800 bg-neutral-800 text-amber-100 hover:bg-neutral-700;
-}
-
-:root.dark .request-button-primary {
-  @apply border-amber-700 bg-amber-700 text-amber-50 hover:bg-amber-600;
-}
-
 :root.dark .rollback-button {
   @apply border-neutral-700 bg-neutral-800 text-neutral-400 hover:bg-neutral-700 hover:text-neutral-300 hover:border-neutral-600;
 }
