@@ -203,6 +203,10 @@
   @apply text-neutral-200;
 }
 
+:root.dark .content-header-action {
+  @apply border-neutral-700 bg-neutral-800 text-neutral-300 hover:border-neutral-600 hover:bg-neutral-700 hover:text-neutral-100;
+}
+
 :root.dark .sidebar-thread-controls-button {
   @apply text-neutral-400 hover:border-neutral-600 hover:bg-neutral-800;
 }
@@ -435,16 +439,16 @@
   @apply bg-neutral-700;
 }
 
-:root.dark .rollback-button {
-  @apply border-neutral-700 bg-neutral-800 text-neutral-400 hover:bg-neutral-700 hover:text-neutral-300 hover:border-neutral-600;
-}
-
 :root.dark .message-image-button {
   @apply border-neutral-600 bg-neutral-800;
 }
 
 :root.dark .message-file-link {
   @apply text-sky-400 hover:text-sky-300;
+}
+
+:root.dark .message-action-button {
+  @apply border-neutral-700 bg-neutral-800 text-neutral-400 hover:border-neutral-600 hover:bg-neutral-700 hover:text-neutral-200;
 }
 
 :root.dark .composer-dropdown-search-input {
