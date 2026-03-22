@@ -9,9 +9,11 @@ import type {
   AuthState,
   CodexCompatibleConfig,
   DemoTransportMode,
+  RuntimeMode,
   XrouterProvider,
 } from 'xcodex-runtime/types'
-import { getWasmRuntimeContext } from './runtime'
+import { getWasmRuntimePolicyPreset, listWasmRuntimePolicyPresets, type WasmRuntimePolicyPreset } from './presets'
+import { getWasmRuntimeContext, invalidateWasmRuntimeContext } from './runtime'
 import {
   clearLegacyStoredWasmRuntimeState,
   loadStoredAuthState,
@@ -21,6 +23,7 @@ import {
 } from './storage'
 
 export type WasmRuntimeDraft = {
+  runtimeMode: RuntimeMode
   transportMode: DemoTransportMode
   providerDisplayName: string
   providerBaseUrl: string
@@ -30,6 +33,8 @@ export type WasmRuntimeDraft = {
   modelReasoningEffort: string
   personality: string
 }
+
+export { type WasmRuntimePolicyPreset }
 
 export type WasmRuntimeStatus = {
   label: string
@@ -82,6 +87,7 @@ function fallbackApiKey(authState: AuthState | null): string {
 function createDefaultWasmRuntimeDraft(): WasmRuntimeDraft {
   const option = defaultProviderOption('openrouter')
   return {
+    runtimeMode: 'default',
     transportMode: 'xrouter-browser',
     providerDisplayName: option.displayName,
     providerBaseUrl: option.baseUrl,
@@ -261,9 +267,13 @@ export async function saveWasmRuntimeDraft(draft: WasmRuntimeDraft): Promise<Cod
     throw new Error('Enter an API key before saving runtime settings.')
   }
 
+  const policyPreset = getWasmRuntimePolicyPreset(draft.runtimeMode)
+
   const config = materializeCodexConfig({
     transportMode: draft.transportMode,
     model: draft.model.trim(),
+    runtimeMode: policyPreset.runtimeMode,
+    browserSecurity: policyPreset.browserSecurity,
     modelReasoningEffort: draft.modelReasoningEffort.trim() || null,
     personality: draft.personality.trim() || 'pragmatic',
     displayName: draft.providerDisplayName.trim(),
@@ -285,6 +295,8 @@ export async function saveWasmRuntimeDraft(draft: WasmRuntimeDraft): Promise<Cod
     saveStoredCodexConfig(config),
     clearLegacyStoredWasmRuntimeState(),
   ])
+
+  invalidateWasmRuntimeContext()
 
   return config
 }
@@ -313,6 +325,8 @@ export async function deleteStoredWasmProviderConfig(
     saveStoredCodexConfig(nextConfig),
     clearLegacyStoredWasmRuntimeState(),
   ])
+
+  invalidateWasmRuntimeContext()
 
   return draftFromConfig(nextConfig, nextAuthState)
 }
@@ -362,6 +376,14 @@ export async function listWasmModelsForDraft(
     : []
 }
 
+export function getWasmRuntimePolicyPresetForDraft(draft: Pick<WasmRuntimeDraft, 'runtimeMode'>): WasmRuntimePolicyPreset {
+  return getWasmRuntimePolicyPreset(draft.runtimeMode)
+}
+
+export function getWasmRuntimePolicyPresetOptions(): WasmRuntimePolicyPreset[] {
+  return listWasmRuntimePolicyPresets()
+}
+
 function draftFromConfig(config: CodexCompatibleConfig, authState: AuthState | null): WasmRuntimeDraft {
   const transportMode = detectTransportMode(config)
   const provider = getActiveProvider(config)
@@ -373,10 +395,14 @@ function draftFromConfig(config: CodexCompatibleConfig, authState: AuthState | n
   })
 
   if (!apiKey && !hasAnyStoredProviderSecret(config, authState, transportMode)) {
-    return createDefaultWasmRuntimeDraft()
+    return {
+      ...createDefaultWasmRuntimeDraft(),
+      runtimeMode: normalizeRuntimeMode(config.runtime_mode),
+    }
   }
 
   return {
+    runtimeMode: normalizeRuntimeMode(config.runtime_mode),
     transportMode,
     providerDisplayName: provider.name,
     providerBaseUrl: provider.baseUrl,
@@ -386,4 +412,8 @@ function draftFromConfig(config: CodexCompatibleConfig, authState: AuthState | n
     modelReasoningEffort: config.modelReasoningEffort?.trim() || 'medium',
     personality: config.personality?.trim() || 'pragmatic',
   }
+}
+
+function normalizeRuntimeMode(value: unknown): RuntimeMode {
+  return value === 'demo' || value === 'chaos' ? value : 'default'
 }

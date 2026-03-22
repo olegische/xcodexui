@@ -25,6 +25,8 @@ declare module 'xcodex-runtime' {
   export function materializeCodexConfig(params: {
     transportMode: import('xcodex-runtime/types').DemoTransportMode
     model: string
+    runtimeMode?: import('xcodex-runtime/types').RuntimeMode | null
+    browserSecurity?: import('xcodex-runtime/types').BrowserSecurityConfig | null
     modelReasoningEffort: string | null
     personality: string | null
     displayName: string
@@ -200,6 +202,13 @@ declare module 'xcodex-runtime/types' {
   export type DemoTransportMode = 'openai' | 'xrouter-browser' | 'openai-compatible'
   export type XrouterProvider = 'deepseek' | 'openai' | 'openrouter' | 'zai'
   export type ProviderKind = 'openai' | 'openai_compatible' | 'xrouter_browser'
+  export type RuntimeMode = 'default' | 'demo' | 'chaos'
+
+  export type BrowserSecurityConfig = {
+    allowed_origins?: string[] | null
+    allow_localhost?: boolean | null
+    allow_private_network?: boolean | null
+  }
 
   export type CodexModelProviderConfig = {
     name: string
@@ -215,6 +224,9 @@ declare module 'xcodex-runtime/types' {
   export type CodexCompatibleConfig = {
     model: string
     modelProvider: string
+    runtime_mode?: RuntimeMode | null
+    runtime_architecture?: string | null
+    browser_security?: BrowserSecurityConfig | null
     modelReasoningEffort: string | null
     personality: string | null
     modelProviders: Record<string, CodexModelProviderConfig>

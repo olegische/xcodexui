@@ -1,10 +1,12 @@
 import { computed, onUnmounted, ref, watch } from 'vue'
-import type { DemoTransportMode, XrouterProvider } from 'xcodex-runtime/types'
+import type { DemoTransportMode, RuntimeMode, XrouterProvider } from 'xcodex-runtime/types'
 import {
   applyStoredWasmTransportDefaults,
   applyStoredWasmXrouterProvider,
   deleteStoredWasmProviderConfig,
   deriveWasmRuntimeStatus,
+  getWasmRuntimePolicyPresetForDraft,
+  getWasmRuntimePolicyPresetOptions,
   getWasmRuntimeStatus,
   hasStoredWasmProviderConfig,
   listWasmModelsForDraft,
@@ -21,6 +23,7 @@ type UseWasmRuntimeSettingsOptions = {
 
 export function useWasmRuntimeSettings(options: UseWasmRuntimeSettingsOptions) {
   const wasmSettingsDraft = ref<WasmRuntimeDraft>({
+    runtimeMode: 'default',
     transportMode: 'xrouter-browser',
     providerDisplayName: 'OpenRouter via Browser Runtime',
     providerBaseUrl: 'https://openrouter.ai/api/v1',
@@ -40,6 +43,7 @@ export function useWasmRuntimeSettings(options: UseWasmRuntimeSettingsOptions) {
   const hasStoredWasmProviderSecret = ref(false)
   const wasmRuntimeModelIds = ref<string[]>([])
   const isSavingWasmSettings = ref(false)
+  const runtimePolicyOptions = getWasmRuntimePolicyPresetOptions()
 
   let wasmModelRefreshToken = 0
   let wasmModelRefreshTimer: ReturnType<typeof setTimeout> | null = null
@@ -68,6 +72,10 @@ export function useWasmRuntimeSettings(options: UseWasmRuntimeSettingsOptions) {
 
   const showWasmRuntimeSetupCta = computed(() =>
     options.enabled && wasmRuntimeStatus.value.isError,
+  )
+
+  const selectedRuntimePolicy = computed(() =>
+    getWasmRuntimePolicyPresetForDraft(wasmSettingsDraft.value),
   )
 
   async function refreshWasmRuntimeSettings(): Promise<void> {
@@ -118,6 +126,13 @@ export function useWasmRuntimeSettings(options: UseWasmRuntimeSettingsOptions) {
         xrouterProvider: nextDraft.xrouterProvider,
       })
     })()
+  }
+
+  function onWasmRuntimeModeChange(runtimeMode: RuntimeMode): void {
+    wasmSettingsDraft.value = {
+      ...wasmSettingsDraft.value,
+      runtimeMode,
+    }
   }
 
   function onWasmXrouterProviderChange(provider: XrouterProvider): void {
@@ -254,10 +269,13 @@ export function useWasmRuntimeSettings(options: UseWasmRuntimeSettingsOptions) {
     hasStoredWasmProviderSecret,
     runtimeModelAllowsManualInput,
     runtimeModelOptions,
+    runtimePolicyOptions,
+    selectedRuntimePolicy,
     derivedRuntimeStatus,
     showWasmRuntimeSetupCta,
     isSavingWasmSettings,
     refreshWasmRuntimeSettings,
+    onWasmRuntimeModeChange,
     onWasmTransportModeChange,
     onWasmXrouterProviderChange,
     saveCurrentWasmRuntimeSettings,

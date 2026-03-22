@@ -67,6 +67,8 @@
           <RuntimeSettingsView
             v-if="isRuntimeSettingsRoute"
             :draft="wasmSettingsDraft"
+            :runtime-policy-options="runtimePolicyOptions"
+            :selected-runtime-policy="selectedRuntimePolicy"
             :derived-runtime-status="derivedRuntimeStatus"
             :runtime-model-options="runtimeModelOptions"
             :runtime-model-allows-manual-input="runtimeModelAllowsManualInput"
@@ -76,6 +78,7 @@
             :wasm-settings-feedback-tone="wasmSettingsFeedbackTone"
             @back="goBackFromRuntimeSettings"
             @update:draft="wasmSettingsDraft = $event"
+            @runtime-mode-change="onWasmRuntimeModeChange"
             @transport-mode-change="onWasmTransportModeChange"
             @xrouter-provider-change="onWasmXrouterProviderChange"
             @save="saveCurrentWasmRuntimeSettings"
@@ -248,10 +251,13 @@ const {
   hasStoredWasmProviderSecret,
   runtimeModelAllowsManualInput,
   runtimeModelOptions,
+  runtimePolicyOptions,
+  selectedRuntimePolicy,
   derivedRuntimeStatus,
   showWasmRuntimeSetupCta,
   isSavingWasmSettings,
   refreshWasmRuntimeSettings,
+  onWasmRuntimeModeChange,
   onWasmTransportModeChange,
   onWasmXrouterProviderChange,
   saveCurrentWasmRuntimeSettings,

@@ -44,6 +44,24 @@ const STATIC_CONTENT_TYPES: Record<string, string> = {
   '.wasm': 'application/wasm',
 }
 
+function normalizeStaticPath(path: string): string {
+  return path.replace(/\\/gu, '/')
+}
+
+function applyRuntimeAssetCacheHeaders(path: string, setHeader: (name: string, value: string) => void): void {
+  const normalizedPath = normalizeStaticPath(path)
+  if (normalizedPath.endsWith('/pkg/manifest.json') || normalizedPath.endsWith('/xrouter-browser/manifest.json')) {
+    setHeader('Cache-Control', 'no-cache, must-revalidate')
+    return
+  }
+  if (
+    normalizedPath.includes('/pkg/current/')
+    || normalizedPath.includes('/xrouter-browser/current/')
+  ) {
+    setHeader('Cache-Control', 'public, max-age=0, must-revalidate')
+  }
+}
+
 function normalizeLocalImagePath(rawPath: string): string {
   const trimmed = rawPath.trim()
   if (!trimmed) return ''
@@ -188,7 +206,13 @@ export function createServer(options: ServerOptions = {}): ServerInstance {
 
   // 7. Static files from Vue build
   if (hasFrontendAssets) {
-    app.use(express.static(distDir))
+    app.use(express.static(distDir, {
+      setHeaders(res, path) {
+        applyRuntimeAssetCacheHeaders(path, (name, value) => {
+          res.setHeader(name, value)
+        })
+      },
+    }))
   }
 
   // 8. SPA fallback

@@ -15,6 +15,22 @@
       <div class="settings-form-grid">
         <label class="settings-form-row">
           <span class="settings-form-copy">
+            <span class="settings-form-title">Security mode</span>
+            <span class="settings-form-description">{{ selectedRuntimePolicy.description }}</span>
+          </span>
+          <select
+            :value="draft.runtimeMode"
+            class="settings-select"
+            @change="$emit('runtime-mode-change', ($event.target as HTMLSelectElement).value as RuntimeMode)"
+          >
+            <option v-for="option in runtimePolicyOptions" :key="option.runtimeMode" :value="option.runtimeMode">
+              {{ option.label }}
+            </option>
+          </select>
+        </label>
+
+        <label class="settings-form-row">
+          <span class="settings-form-copy">
             <span class="settings-form-title">Status</span>
             <span class="settings-form-description">{{ derivedRuntimeStatus.detail }}</span>
           </span>
@@ -121,19 +137,25 @@
       <p v-if="wasmSettingsFeedback" class="settings-inline-note" :class="{ 'is-error': wasmSettingsFeedbackTone === 'error' }">
         {{ wasmSettingsFeedback }}
       </p>
+      <p class="settings-inline-note">
+        Browser security allowlists are preset by the selected mode and current app origin. Dangerous browser tools fail closed until explicit approval mediation is added.
+      </p>
     </div>
   </section>
 </template>
 
 <script setup lang="ts">
-import type { DemoTransportMode, XrouterProvider } from 'xcodex-runtime/types'
+import type { DemoTransportMode, RuntimeMode, XrouterProvider } from 'xcodex-runtime/types'
 import IconTablerChevronLeft from '../icons/IconTablerChevronLeft.vue'
 import type {
   WasmRuntimeDraft,
+  WasmRuntimePolicyPreset,
 } from '../../runtime/wasm/settings'
 
 defineProps<{
   draft: WasmRuntimeDraft
+  runtimePolicyOptions: WasmRuntimePolicyPreset[]
+  selectedRuntimePolicy: WasmRuntimePolicyPreset
   derivedRuntimeStatus: { label: string; detail: string; isError: boolean }
   runtimeModelOptions: Array<{ value: string; label: string }>
   runtimeModelAllowsManualInput: boolean
@@ -146,6 +168,7 @@ defineProps<{
 defineEmits<{
   (event: 'back'): void
   (event: 'update:draft', payload: WasmRuntimeDraft): void
+  (event: 'runtime-mode-change', payload: RuntimeMode): void
   (event: 'transport-mode-change', payload: DemoTransportMode): void
   (event: 'xrouter-provider-change', payload: XrouterProvider): void
   (event: 'save'): void

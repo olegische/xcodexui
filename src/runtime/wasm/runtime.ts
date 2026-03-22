@@ -38,6 +38,10 @@ type WasmRuntimeContext = {
 }
 let runtimeContextPromise: Promise<WasmRuntimeContext> | null = null
 
+export function invalidateWasmRuntimeContext(): void {
+  runtimeContextPromise = null
+}
+
 const XCODEX_WASM_BASE_INSTRUCTIONS = [
   'You are XCodex WASM: a real Codex-derived runtime executing locally in the browser via WASM.',
   '',
