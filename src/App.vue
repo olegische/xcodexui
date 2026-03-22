@@ -62,6 +62,17 @@
               @start-new-thread="onStartNewThreadFromToolbar"
             />
           </template>
+          <template #actions>
+            <button
+              v-if="canExportThread"
+              class="content-header-action"
+              type="button"
+              title="Export chat as Markdown"
+              @click="onExportChat"
+            >
+              Export
+            </button>
+          </template>
         </ContentHeader>
 
         <section class="content-body">
@@ -346,6 +357,13 @@ const availableComposerModels = computed(() =>
     ? runtimeModelOptions.value.map((option) => option.value)
     : availableModelIds.value,
 )
+const canExportThread = computed(() =>
+  !isHomeRoute.value
+  && !isSkillsRoute.value
+  && !isRuntimeSettingsRoute.value
+  && !!selectedThread.value
+  && filteredMessages.value.length > 0,
+)
 
 onMounted(() => {
   window.addEventListener('keydown', onWindowKeyDown)
@@ -473,6 +491,93 @@ watch(isMobile, (mobile) => {
 
 function onSkillsChanged(): void {
   void refreshSkills()
+}
+
+function onExportChat(): void {
+  if (!canExportThread.value || typeof document === 'undefined') return
+  const markdown = buildThreadMarkdown()
+  const fileName = buildExportFileName()
+  const blob = new Blob([markdown], { type: 'text/markdown;charset=utf-8' })
+  const objectUrl = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = objectUrl
+  link.download = fileName
+  document.body.appendChild(link)
+  link.click()
+  document.body.removeChild(link)
+  window.setTimeout(() => URL.revokeObjectURL(objectUrl), 0)
+}
+
+function buildThreadMarkdown(): string {
+  const lines: string[] = []
+  const threadTitle = selectedThread.value?.title?.trim() || 'Untitled thread'
+  lines.push(`# ${escapeMarkdownText(threadTitle)}`)
+  lines.push('')
+  lines.push(`- Exported: ${new Date().toISOString()}`)
+  lines.push(`- Thread ID: ${selectedThread.value?.id ?? ''}`)
+  lines.push('')
+  lines.push('---')
+  lines.push('')
+
+  for (const message of filteredMessages.value) {
+    const roleLabel = message.role ? message.role.toUpperCase() : 'MESSAGE'
+    lines.push(`## ${roleLabel}`)
+    lines.push('')
+
+    const normalizedText = message.text.trim()
+    if (normalizedText) {
+      lines.push(normalizedText)
+      lines.push('')
+    }
+
+    if (message.commandExecution) {
+      lines.push('```text')
+      lines.push(`command: ${message.commandExecution.command}`)
+      lines.push(`status: ${message.commandExecution.status}`)
+      if (message.commandExecution.cwd) {
+        lines.push(`cwd: ${message.commandExecution.cwd}`)
+      }
+      if (message.commandExecution.exitCode !== null) {
+        lines.push(`exitCode: ${message.commandExecution.exitCode}`)
+      }
+      lines.push(message.commandExecution.aggregatedOutput || '(no output)')
+      lines.push('```')
+      lines.push('')
+    }
+
+    if (message.fileAttachments && message.fileAttachments.length > 0) {
+      lines.push('Attachments:')
+      for (const attachment of message.fileAttachments) {
+        lines.push(`- ${attachment.path}`)
+      }
+      lines.push('')
+    }
+
+    if (message.images && message.images.length > 0) {
+      lines.push('Images:')
+      for (const imageUrl of message.images) {
+        lines.push(`- ${imageUrl}`)
+      }
+      lines.push('')
+    }
+  }
+
+  return `${lines.join('\n').trimEnd()}\n`
+}
+
+function buildExportFileName(): string {
+  const threadTitle = selectedThread.value?.title?.trim() || 'chat'
+  const sanitized = threadTitle
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+  const base = sanitized || 'chat'
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-')
+  return `${base}-${stamp}.md`
+}
+
+function escapeMarkdownText(value: string): string {
+  return value.replace(/([\\`*_{}\[\]()#+\-.!])/g, '\\$1')
 }
 
 function onOpenSkills(): void {
@@ -660,6 +765,10 @@ async function syncThreadSelectionWithRoute(): Promise<void> {
 
 .sidebar-thread-controls-header-host {
   @apply ml-1;
+}
+
+.content-header-action {
+  @apply inline-flex items-center rounded-md border border-zinc-200 bg-white px-2.5 py-1.5 text-xs font-medium text-zinc-700 transition hover:border-zinc-300 hover:text-zinc-900;
 }
 
 .content-body {

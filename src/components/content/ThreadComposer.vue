@@ -1,5 +1,9 @@
 <template>
   <form class="thread-composer" @submit.prevent="onSubmit('steer')">
+    <p v-if="dictationErrorText" class="thread-composer-dictation-error">
+      {{ dictationErrorText }}
+    </p>
+
     <div class="thread-composer-shell" :class="{ 'thread-composer-shell--no-top-radius': hasQueueAbove }">
       <div v-if="enableAttachments && selectedImages.length > 0" class="thread-composer-attachments">
         <div v-for="image in selectedImages" :key="image.id" class="thread-composer-attachment">
@@ -90,7 +94,10 @@
         />
       </div>
 
-      <div class="thread-composer-controls">
+      <div
+        class="thread-composer-controls"
+        :class="{ 'thread-composer-controls--recording': isDictationRecording }"
+      >
         <div v-if="enableAttachments" ref="attachMenuRootRef" class="thread-composer-attach">
           <button
             class="thread-composer-attach-trigger"
@@ -157,22 +164,39 @@
           @update:model-value="onReasoningEffortSelect"
         />
 
-        <div class="thread-composer-actions">
+        <div
+          class="thread-composer-actions"
+          :class="{ 'thread-composer-actions--recording': isDictationRecording }"
+        >
+          <div v-if="dictationState === 'recording'" class="thread-composer-dictation-waveform-wrap" aria-hidden="true">
+            <canvas ref="dictationWaveformCanvasRef" class="thread-composer-dictation-waveform" />
+          </div>
+
+          <span v-if="dictationState === 'recording'" class="thread-composer-dictation-timer">
+            {{ dictationDurationLabel }}
+          </span>
+
           <button
             v-if="enableDictation && isDictationSupported && !isTurnInProgress"
             class="thread-composer-mic"
-            :class="{ 'thread-composer-mic--active': dictationState !== 'idle' }"
+            :class="{
+              'thread-composer-mic--active': dictationState === 'recording',
+              'thread-composer-mic--transcribing': dictationState === 'transcribing',
+            }"
             type="button"
-            :aria-label="dictationState === 'recording' ? 'Stop dictation' : 'Hold to dictate'"
-            :title="dictationState === 'recording' ? 'Release to transcribe' : 'Hold to dictate'"
-            :disabled="isInteractionDisabled"
-            @mousedown.prevent="startRecording"
-            @mouseup="stopRecording"
-            @mouseleave="dictationState === 'recording' && stopRecording()"
-            @touchstart.prevent="startRecording"
-            @touchend="stopRecording"
+            :aria-label="dictationButtonLabel"
+            :title="dictationButtonLabel"
+            :disabled="isInteractionDisabled || dictationState === 'transcribing'"
+            @pointerdown="onDictationPressStart"
+            @pointerup="onDictationPressEnd"
+            @pointercancel="onDictationPressEnd"
           >
-            <IconTablerMicrophone class="thread-composer-mic-icon" />
+            <IconTablerPlayerStopFilled
+              v-if="dictationState === 'recording'"
+              class="thread-composer-mic-icon thread-composer-mic-icon--stop"
+            />
+            <span v-else-if="dictationState === 'transcribing'" class="thread-composer-mic-spinner" aria-hidden="true" />
+            <IconTablerMicrophone v-else class="thread-composer-mic-icon" />
           </button>
 
           <button
@@ -284,9 +308,31 @@ const draft = ref('')
 const selectedImages = ref<SelectedImage[]>([])
 const selectedSkills = ref<SkillItem[]>([])
 const fileAttachments = ref<FileAttachment[]>([])
+const dictationFeedback = ref('')
 
-const { state: dictationState, isSupported: isDictationSupported, startRecording, stopRecording } = useDictation({
-  onTranscript: (text) => { draft.value = draft.value ? `${draft.value}\n${text}` : text },
+const {
+  state: dictationState,
+  isSupported: isDictationSupported,
+  recordingDurationMs,
+  waveformCanvasRef: dictationWaveformCanvasRef,
+  startRecording,
+  stopRecording,
+} = useDictation({
+  onTranscript: (text) => {
+    draft.value = draft.value ? `${draft.value}\n${text}` : text
+    dictationFeedback.value = ''
+    nextTick(() => inputRef.value?.focus())
+  },
+  onEmpty: () => {
+    dictationFeedback.value = 'No speech detected. Hold the mic and speak.'
+  },
+  onError: (error) => {
+    if (error instanceof DOMException && error.name === 'NotAllowedError') {
+      dictationFeedback.value = 'Microphone access was denied.'
+      return
+    }
+    dictationFeedback.value = error instanceof Error ? error.message : 'Dictation failed.'
+  },
 })
 const attachMenuRootRef = ref<HTMLElement | null>(null)
 const photoLibraryInputRef = ref<HTMLInputElement | null>(null)
@@ -301,6 +347,7 @@ const isFileMentionOpen = ref(false)
 const fileMentionHighlightedIndex = ref(0)
 let fileMentionSearchToken = 0
 let fileMentionDebounceTimer: ReturnType<typeof setTimeout> | null = null
+let isHoldPressActive = false
 const isAndroid = typeof navigator !== 'undefined' && /Android/i.test(navigator.userAgent)
 
 const reasoningOptions: Array<{ value: ReasoningEffort; label: string }> = [
@@ -341,6 +388,21 @@ const isInteractionDisabled = computed(() => props.disabled || !props.activeThre
 const inProgressMode = computed<'steer' | 'queue'>(() =>
   props.inProgressSubmitMode === 'steer' ? 'steer' : 'queue',
 )
+const isDictationRecording = computed(() => dictationState.value === 'recording')
+const dictationButtonLabel = computed(() => {
+  if (dictationState.value === 'recording') return 'Stop dictation'
+  if (dictationState.value === 'transcribing') return 'Transcribing dictation'
+  return 'Hold to dictate'
+})
+const dictationErrorText = computed(() =>
+  dictationState.value === 'idle' ? dictationFeedback.value.trim() : '',
+)
+const dictationDurationLabel = computed(() => {
+  const totalSeconds = Math.max(0, Math.floor(recordingDurationMs.value / 1000))
+  const minutes = Math.floor(totalSeconds / 60)
+  const seconds = totalSeconds % 60
+  return `${minutes}:${String(seconds).padStart(2, '0')}`
+})
 
 const placeholderText = computed(() =>
   props.activeThreadId
@@ -388,6 +450,36 @@ function onModelSelect(value: string): void {
 
 function onReasoningEffortSelect(value: string): void {
   emit('update:selected-reasoning-effort', value as ReasoningEffort)
+}
+
+function onDictationPressStart(event: PointerEvent): void {
+  event.preventDefault()
+  if (isHoldPressActive) return
+  isHoldPressActive = true
+  const target = event.currentTarget as HTMLElement | null
+  if (target) {
+    try {
+      target.setPointerCapture(event.pointerId)
+    } catch {
+      // Ignore if pointer capture is unavailable.
+    }
+  }
+  if (dictationFeedback.value) {
+    dictationFeedback.value = ''
+  }
+  window.addEventListener('pointerup', onDictationPressEnd)
+  window.addEventListener('pointercancel', onDictationPressEnd)
+  window.addEventListener('blur', onDictationPressEnd)
+  void startRecording()
+}
+
+function onDictationPressEnd(): void {
+  if (!isHoldPressActive) return
+  isHoldPressActive = false
+  window.removeEventListener('pointerup', onDictationPressEnd)
+  window.removeEventListener('pointercancel', onDictationPressEnd)
+  window.removeEventListener('blur', onDictationPressEnd)
+  stopRecording()
 }
 
 function toggleAttachMenu(): void {
@@ -476,6 +568,9 @@ function onCameraCaptureChange(event: Event): void {
 }
 
 function onInputChange(): void {
+  if (dictationFeedback.value) {
+    dictationFeedback.value = ''
+  }
   const text = draft.value
   const shouldShowSlashMenu = enableSkills.value && text.startsWith('/')
   if (shouldShowSlashMenu !== isSlashMenuOpen.value) {
@@ -700,6 +795,9 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   document.removeEventListener('click', onDocumentClick)
+  window.removeEventListener('pointerup', onDictationPressEnd)
+  window.removeEventListener('pointercancel', onDictationPressEnd)
+  window.removeEventListener('blur', onDictationPressEnd)
   if (fileMentionDebounceTimer) {
     clearTimeout(fileMentionDebounceTimer)
   }
@@ -722,6 +820,7 @@ watch(
     selectedImages.value = []
     selectedSkills.value = []
     fileAttachments.value = []
+    dictationFeedback.value = ''
     isAttachMenuOpen.value = false
     isSlashMenuOpen.value = false
     closeFileMention()
@@ -755,6 +854,10 @@ watch(
 
 .thread-composer {
   @apply w-full max-w-175 mx-auto px-2 sm:px-6;
+}
+
+.thread-composer-dictation-error {
+  @apply mb-2 px-2 sm:px-6 text-sm text-amber-700;
 }
 
 .thread-composer-shell {
@@ -889,6 +992,10 @@ watch(
   @apply relative mt-2 sm:mt-3 flex items-center gap-2 sm:gap-4 overflow-visible;
 }
 
+.thread-composer-controls--recording {
+  @apply gap-3;
+}
+
 .thread-composer-attach {
   @apply relative shrink-0;
 }
@@ -917,6 +1024,22 @@ watch(
   @apply ml-auto flex items-center gap-2;
 }
 
+.thread-composer-actions--recording {
+  @apply min-w-0 flex-1;
+}
+
+.thread-composer-dictation-waveform-wrap {
+  @apply min-w-0 flex-1;
+}
+
+.thread-composer-dictation-waveform {
+  @apply h-9 w-full text-red-600;
+}
+
+.thread-composer-dictation-timer {
+  @apply shrink-0 font-mono text-xs text-zinc-500;
+}
+
 .thread-composer-mic {
   @apply inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border-0 bg-zinc-100 text-zinc-600 transition hover:bg-zinc-200 hover:text-zinc-900 disabled:cursor-not-allowed disabled:text-zinc-400;
 }
@@ -925,8 +1048,20 @@ watch(
   @apply bg-red-100 text-red-700 hover:bg-red-200 hover:text-red-800;
 }
 
+.thread-composer-mic--transcribing {
+  @apply bg-amber-100 text-amber-700 hover:bg-amber-100 hover:text-amber-700;
+}
+
 .thread-composer-mic-icon {
   @apply h-5 w-5;
+}
+
+.thread-composer-mic-icon--stop {
+  @apply h-4 w-4;
+}
+
+.thread-composer-mic-spinner {
+  @apply h-4 w-4 rounded-full border-2 border-current border-t-transparent animate-spin;
 }
 
 .thread-composer-submit {

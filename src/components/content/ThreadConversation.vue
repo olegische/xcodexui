@@ -14,7 +14,7 @@
         v-for="message in messages"
         :key="message.id"
         class="conversation-item"
-        :class="{ 'conversation-item-rollbackable': canRollbackMessage(message) }"
+        :class="{ 'conversation-item-actionable': canShowMessageActions(message) }"
         :data-role="message.role"
         :data-message-type="message.messageType || ''"
       >
@@ -135,6 +135,7 @@
                     <p v-if="block.kind === 'text'" class="message-text">
                       <template v-for="(segment, segmentIndex) in parseInlineSegments(block.value)" :key="`seg-${blockIndex}-${segmentIndex}`">
                         <span v-if="segment.kind === 'text'">{{ segment.value }}</span>
+                        <strong v-else-if="segment.kind === 'bold'" class="message-bold-text">{{ segment.value }}</strong>
                         <a
                           v-else-if="segment.kind === 'file'"
                           class="message-file-link"
@@ -144,6 +145,16 @@
                           :title="segment.path"
                         >
                           {{ segment.displayPath }}
+                        </a>
+                        <a
+                          v-else-if="segment.kind === 'url'"
+                          class="message-file-link"
+                          :href="segment.href"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          :title="segment.href"
+                        >
+                          {{ segment.value }}
                         </a>
                         <code v-else class="message-inline-code">{{ segment.value }}</code>
                       </template>
@@ -168,16 +179,28 @@
               </article>
             </article>
 
-            <button
-              v-if="allowRollback && canRollbackMessage(message)"
-              class="rollback-button"
-              type="button"
-              title="Rollback to this message (remove this turn and all after it)"
-              @click="onRollback(message)"
-            >
-              <IconTablerArrowBackUp class="rollback-icon" />
-              <span class="rollback-label">Rollback</span>
-            </button>
+            <div v-if="canShowMessageActions(message)" class="message-actions">
+              <button
+                v-if="canCopyMessage(message)"
+                class="message-action-button"
+                type="button"
+                title="Copy message text"
+                @click="onCopyMessage(message)"
+              >
+                <IconTablerCopy class="message-action-icon" />
+                <span class="message-action-label">Copy</span>
+              </button>
+              <button
+                v-if="allowRollback && canRollbackMessage(message)"
+                class="message-action-button"
+                type="button"
+                title="Rollback to this message (remove this turn and all after it)"
+                @click="onRollback(message)"
+              >
+                <IconTablerArrowBackUp class="message-action-icon" />
+                <span class="message-action-label">Rollback</span>
+              </button>
+            </div>
           </div>
         </div>
       </li>
@@ -210,6 +233,7 @@ import { nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import type { ThreadScrollState, UiLiveOverlay, UiMessage } from '../../types/codex'
 import IconTablerX from '../icons/IconTablerX.vue'
 import IconTablerArrowBackUp from '../icons/IconTablerArrowBackUp.vue'
+import IconTablerCopy from '../icons/IconTablerCopy.vue'
 
 const expandedCommandIds = ref<Set<string>>(new Set())
 const collapsingCommandIds = ref<Set<string>>(new Set())
@@ -378,7 +402,9 @@ const modalImageUrl = ref('')
 const BOTTOM_THRESHOLD_PX = 16
 type InlineSegment =
   | { kind: 'text'; value: string }
+  | { kind: 'bold'; value: string }
   | { kind: 'code'; value: string }
+  | { kind: 'url'; value: string; href: string }
   | { kind: 'file'; value: string; path: string; displayPath: string; downloadName: string }
 type MessageBlock =
   | { kind: 'text'; value: string }
@@ -430,8 +456,97 @@ function parseFileReference(value: string): { path: string; line: number | null 
   return { path: pathValue, line }
 }
 
+function splitPlainTextByLinks(text: string): InlineSegment[] {
+  const segments: InlineSegment[] = []
+  const pattern = /https?:\/\/\S+/gu
+  let cursor = 0
+
+  for (const match of text.matchAll(pattern)) {
+    if (typeof match.index !== 'number') continue
+    const start = match.index
+    const end = start + match[0].length
+
+    if (start > cursor) {
+      segments.push({ kind: 'text', value: text.slice(cursor, start) })
+    }
+
+    let token = match[0]
+    let trailingPunctuation = ''
+    while (/[.,;:]$/u.test(token)) {
+      trailingPunctuation = token.slice(-1) + trailingPunctuation
+      token = token.slice(0, -1)
+    }
+
+    segments.push({ kind: 'url', value: token, href: token })
+    if (trailingPunctuation) {
+      segments.push({ kind: 'text', value: trailingPunctuation })
+    }
+
+    cursor = end
+  }
+
+  if (cursor < text.length) {
+    segments.push({ kind: 'text', value: text.slice(cursor) })
+  }
+
+  return applyBoldMarkersAcrossTextSegments(segments)
+}
+
+function applyBoldMarkersAcrossTextSegments(segments: InlineSegment[]): InlineSegment[] {
+  const output: InlineSegment[] = []
+  let inBold = false
+  let boldBuffer = ''
+
+  const pushText = (value: string): void => {
+    if (!value) return
+    output.push({ kind: 'text', value })
+  }
+
+  for (const segment of segments) {
+    if (segment.kind !== 'text') {
+      if (inBold) {
+        pushText(`**${boldBuffer}`)
+        inBold = false
+        boldBuffer = ''
+      }
+      output.push(segment)
+      continue
+    }
+
+    let remaining = segment.value
+    while (remaining.length > 0) {
+      const markerIndex = remaining.indexOf('**')
+      if (markerIndex < 0) {
+        if (inBold) boldBuffer += remaining
+        else pushText(remaining)
+        break
+      }
+
+      const before = remaining.slice(0, markerIndex)
+      if (inBold) boldBuffer += before
+      else pushText(before)
+
+      remaining = remaining.slice(markerIndex + 2)
+      if (inBold) {
+        if (boldBuffer.length > 0) output.push({ kind: 'bold', value: boldBuffer })
+        else pushText('****')
+        boldBuffer = ''
+        inBold = false
+      } else {
+        inBold = true
+      }
+    }
+  }
+
+  if (inBold) {
+    pushText(`**${boldBuffer}`)
+  }
+
+  return output
+}
+
 function parseInlineSegments(text: string): InlineSegment[] {
-  if (!text.includes('`')) return [{ kind: 'text', value: text }]
+  if (!text.includes('`')) return splitPlainTextByLinks(text)
 
   const segments: InlineSegment[] = []
   let cursor = 0
@@ -473,7 +588,7 @@ function parseInlineSegments(text: string): InlineSegment[] {
     }
 
     if (cursor > textStart) {
-      segments.push({ kind: 'text', value: text.slice(textStart, cursor) })
+      segments.push(...splitPlainTextByLinks(text.slice(textStart, cursor)))
     }
 
     const token = text.slice(cursor + openLength, closingStart)
@@ -502,7 +617,7 @@ function parseInlineSegments(text: string): InlineSegment[] {
   }
 
   if (textStart < text.length) {
-    segments.push({ kind: 'text', value: text.slice(textStart) })
+    segments.push(...splitPlainTextByLinks(text.slice(textStart)))
   }
 
   return segments
@@ -597,6 +712,24 @@ function canRollbackMessage(message: UiMessage): boolean {
   if (typeof message.turnIndex !== 'number') return false
   if (props.isTurnInProgress || props.isRollingBack) return false
   return true
+}
+
+function canCopyMessage(message: UiMessage): boolean {
+  return message.text.trim().length > 0
+}
+
+function canShowMessageActions(message: UiMessage): boolean {
+  return canCopyMessage(message) || (props.allowRollback && canRollbackMessage(message))
+}
+
+async function onCopyMessage(message: UiMessage): Promise<void> {
+  const text = message.text.trim()
+  if (!text || typeof navigator === 'undefined' || !navigator.clipboard?.writeText) return
+  try {
+    await navigator.clipboard.writeText(text)
+  } catch {
+    // Ignore clipboard failures; the action is best-effort.
+  }
 }
 
 function onRollback(message: UiMessage): void {
@@ -946,6 +1079,10 @@ onBeforeUnmount(() => {
   @apply rounded-md border border-zinc-200 bg-zinc-100/70 px-1.5 py-0.5 text-[0.875em] leading-[1.4] text-zinc-900 font-mono;
 }
 
+.message-bold-text {
+  @apply font-semibold text-zinc-950;
+}
+
 .message-file-link {
   @apply text-sm leading-relaxed text-sky-700 no-underline hover:text-sky-600 hover:underline underline-offset-2;
 }
@@ -1029,19 +1166,23 @@ onBeforeUnmount(() => {
   @apply w-5 h-5;
 }
 
-.conversation-item-rollbackable:hover .rollback-button {
+.conversation-item-actionable:hover .message-action-button {
   @apply opacity-100;
 }
 
-.rollback-button {
-  @apply opacity-0 mt-1 inline-flex items-center gap-1 self-start rounded-md border border-zinc-200 bg-white px-2 py-1 text-xs text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-700 hover:border-zinc-300;
+.message-actions {
+  @apply mt-1 flex items-center gap-2;
 }
 
-.rollback-icon {
+.message-action-button {
+  @apply opacity-0 inline-flex items-center gap-1 self-start rounded-md border border-zinc-200 bg-white px-2 py-1 text-xs text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-700 hover:border-zinc-300;
+}
+
+.message-action-icon {
   @apply w-3.5 h-3.5;
 }
 
-.rollback-label {
+.message-action-label {
   @apply leading-none;
 }
 
