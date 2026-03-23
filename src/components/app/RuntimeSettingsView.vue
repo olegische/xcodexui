@@ -68,15 +68,33 @@
         <label class="settings-form-row is-input">
           <span class="settings-form-copy">
             <span class="settings-form-title">API key</span>
-            <span class="settings-form-description">Current API key for the browser runtime. OAuth is disabled.</span>
+            <span class="settings-form-description">{{ providerSetupGuide.keyHelp }}</span>
           </span>
-          <input :value="draft.apiKey" class="settings-input" type="password" placeholder="Paste API key" @input="$emit('update:draft', { ...draft, apiKey: ($event.target as HTMLInputElement).value })" />
+          <input :value="draft.apiKey" class="settings-input" type="password" :placeholder="providerSetupGuide.keyPlaceholder" @input="$emit('update:draft', { ...draft, apiKey: ($event.target as HTMLInputElement).value })" />
         </label>
+
+        <section class="settings-provider-guide" aria-label="Provider setup guide">
+          <div class="settings-provider-guide-copy">
+            <p class="settings-provider-guide-title">{{ providerSetupGuide.title }}</p>
+            <p class="settings-provider-guide-description">{{ providerSetupGuide.description }}</p>
+            <ul class="settings-provider-guide-steps">
+              <li v-for="step in providerSetupGuide.steps" :key="step">{{ step }}</li>
+            </ul>
+          </div>
+          <a
+            class="settings-provider-guide-link"
+            :href="providerSetupGuide.docsUrl"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            {{ providerSetupGuide.docsLabel }}
+          </a>
+        </section>
 
         <label class="settings-form-row is-input">
           <span class="settings-form-copy">
             <span class="settings-form-title">Base URL</span>
-            <span class="settings-form-description">Provider endpoint used by the runtime.</span>
+            <span class="settings-form-description">{{ providerSetupGuide.baseUrlHelp }}</span>
           </span>
           <input :value="draft.providerBaseUrl" class="settings-input" type="text" placeholder="https://..." @input="$emit('update:draft', { ...draft, providerBaseUrl: ($event.target as HTMLInputElement).value })" />
         </label>
@@ -151,14 +169,17 @@
 </template>
 
 <script setup lang="ts">
+import { computed } from 'vue'
 import type { DemoTransportMode, RuntimeMode, XrouterProvider } from 'xcodex-runtime/types'
 import IconTablerChevronLeft from '../icons/IconTablerChevronLeft.vue'
 import type {
+  WasmProviderSetupGuide,
   WasmRuntimeDraft,
   WasmRuntimePolicyPreset,
 } from '../../runtime/wasm/settings'
+import { getWasmProviderSetupGuide } from '../../runtime/wasm/settings'
 
-defineProps<{
+const props = defineProps<{
   draft: WasmRuntimeDraft
   runtimePolicyOptions: WasmRuntimePolicyPreset[]
   selectedRuntimePolicy: WasmRuntimePolicyPreset
@@ -170,6 +191,13 @@ defineProps<{
   wasmSettingsFeedback: string
   wasmSettingsFeedbackTone: 'neutral' | 'error'
 }>()
+
+const providerSetupGuide = computed<WasmProviderSetupGuide>(() =>
+  getWasmProviderSetupGuide({
+    transportMode: props.draft.transportMode,
+    xrouterProvider: props.draft.xrouterProvider,
+  }),
+)
 
 defineEmits<{
   (event: 'back'): void
@@ -229,6 +257,30 @@ defineEmits<{
 
 .settings-form-grid {
   @apply divide-y divide-zinc-200;
+}
+
+.settings-provider-guide {
+  @apply flex flex-col gap-4 bg-white px-5 py-4 sm:flex-row sm:items-start sm:justify-between;
+}
+
+.settings-provider-guide-copy {
+  @apply min-w-0 flex-1;
+}
+
+.settings-provider-guide-title {
+  @apply m-0 text-[0.82rem] font-semibold text-zinc-900;
+}
+
+.settings-provider-guide-description {
+  @apply m-0 pt-1 text-[0.82rem] leading-6 text-zinc-500;
+}
+
+.settings-provider-guide-steps {
+  @apply m-0 list-disc pl-5 pt-2 text-[0.82rem] leading-6 text-zinc-700;
+}
+
+.settings-provider-guide-link {
+  @apply inline-flex shrink-0 items-center justify-center rounded-[1rem] border border-zinc-200 bg-zinc-50 px-3 py-2 text-[0.82rem] font-medium text-zinc-800 no-underline transition hover:bg-zinc-100;
 }
 
 .settings-form-row {

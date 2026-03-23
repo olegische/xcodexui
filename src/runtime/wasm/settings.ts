@@ -42,6 +42,117 @@ export type WasmRuntimeStatus = {
   isError: boolean
 }
 
+export type WasmProviderSetupGuide = {
+  title: string
+  description: string
+  docsLabel: string
+  docsUrl: string
+  keyPlaceholder: string
+  keyHelp: string
+  baseUrlHelp: string
+  steps: string[]
+}
+
+export function getWasmProviderSetupGuide(input: Pick<WasmRuntimeDraft, 'transportMode' | 'xrouterProvider'>): WasmProviderSetupGuide {
+  if (input.transportMode === 'xrouter-browser') {
+    switch (input.xrouterProvider) {
+      case 'deepseek':
+        return {
+          title: 'Get a DeepSeek API key',
+          description: 'DeepSeek does not use OAuth here. Create a platform key in DeepSeek, then paste it into this runtime.',
+          docsLabel: 'Open DeepSeek API docs',
+          docsUrl: 'https://api-docs.deepseek.com/api/deepseek-api',
+          keyPlaceholder: 'Paste DeepSeek API key',
+          keyHelp: 'Create a DeepSeek platform key first, then paste it here.',
+          baseUrlHelp: 'Leave the default DeepSeek endpoint unless you run a proxy.',
+          steps: [
+            'Open the official DeepSeek API docs.',
+            'Create or copy a DeepSeek API key from your platform account.',
+            'Paste the key here and save the runtime settings.',
+          ],
+        }
+      case 'zai':
+        return {
+          title: 'Get a Z.AI API key',
+          description: 'Z.AI expects a bearer API key from the Open Platform. This runtime stores it locally in the browser only.',
+          docsLabel: 'Open Z.AI developer docs',
+          docsUrl: 'https://docs.z.ai/api-reference/introduction',
+          keyPlaceholder: 'Paste Z.AI API key',
+          keyHelp: 'Create a key in Z.AI Open Platform, then paste it here.',
+          baseUrlHelp: 'Leave the default Z.AI endpoint unless you were given a custom gateway.',
+          steps: [
+            'Open the Z.AI developer docs.',
+            'Sign in to Z.AI Open Platform and create an API key.',
+            'Paste the key here and save the runtime settings.',
+          ],
+        }
+      case 'openai':
+        return {
+          title: 'Use an OpenAI-compatible key',
+          description: 'This route expects an OpenAI-compatible provider that speaks the standard bearer-token API.',
+          docsLabel: 'Open runtime docs',
+          docsUrl: 'https://platform.openai.com/docs/overview',
+          keyPlaceholder: 'Paste OpenAI-compatible API key',
+          keyHelp: 'Paste a bearer API key for the selected OpenAI-compatible provider.',
+          baseUrlHelp: 'Point this to the provider base URL that exposes the OpenAI-compatible API.',
+          steps: [
+            'Create an API key in the provider you want to use.',
+            'Paste the key here.',
+            'Set the matching base URL if it is not already correct.',
+          ],
+        }
+      case 'openrouter':
+      default:
+        return {
+          title: 'Get an OpenRouter API key',
+          description: 'OpenRouter keys come from your OpenRouter account, not from Codex. You usually need account credits before the key is useful.',
+          docsLabel: 'Open OpenRouter docs',
+          docsUrl: 'https://openrouter.ai/docs/faq',
+          keyPlaceholder: 'Paste OpenRouter API key',
+          keyHelp: 'Create an OpenRouter API key in your OpenRouter account, then paste it here.',
+          baseUrlHelp: 'Leave the default OpenRouter endpoint unless you use your own proxy.',
+          steps: [
+            'Open the official OpenRouter docs.',
+            'Create an account, add credits if needed, and generate an API key.',
+            'Paste the key here and save the runtime settings.',
+          ],
+        }
+    }
+  }
+
+  if (input.transportMode === 'openai') {
+    return {
+      title: 'Get an OpenAI API key',
+      description: 'OpenAI keys are created in your OpenAI platform account and used as bearer tokens.',
+      docsLabel: 'Open OpenAI docs',
+      docsUrl: 'https://platform.openai.com/docs/overview',
+      keyPlaceholder: 'Paste OpenAI API key',
+      keyHelp: 'Create an OpenAI API key in the OpenAI platform, then paste it here.',
+      baseUrlHelp: 'Leave the default OpenAI API endpoint unless you use a proxy.',
+      steps: [
+        'Open the OpenAI platform docs.',
+        'Create an API key in your platform account.',
+        'Paste the key here and save the runtime settings.',
+      ],
+    }
+  }
+
+  return {
+    title: 'Connect an OpenAI-compatible server',
+    description: 'This runtime expects a bearer API key and a base URL for a server that implements the OpenAI-compatible API.',
+    docsLabel: 'Open OpenAI API docs',
+    docsUrl: 'https://platform.openai.com/docs/overview',
+    keyPlaceholder: 'Paste API key',
+    keyHelp: 'Paste the bearer API key for your server.',
+    baseUrlHelp: 'Set the exact base URL exposed by that server.',
+    steps: [
+      'Create or copy an API key from your provider.',
+      'Paste the key here.',
+      'Set the correct OpenAI-compatible base URL, then save.',
+    ],
+  }
+}
+
 export function deriveWasmRuntimeStatus(input: {
   providerName: string
   apiKey: string
@@ -55,7 +166,7 @@ export function deriveWasmRuntimeStatus(input: {
   if (!apiKey) {
     return {
       label: 'API key required',
-      detail: `${providerName} is selected, but no API key is stored.`,
+      detail: `${providerName} is selected, but no API key is stored yet. Use the setup guide below to create one.`,
       isError: true,
     }
   }
