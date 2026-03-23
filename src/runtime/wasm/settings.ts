@@ -107,7 +107,7 @@ export function getWasmProviderSetupGuide(input: Pick<WasmRuntimeDraft, 'transpo
           title: 'Get an OpenRouter API key',
           description: 'OpenRouter keys come from your OpenRouter account, not from Codex. You usually need account credits before the key is useful.',
           docsLabel: 'Open OpenRouter docs',
-          docsUrl: 'https://openrouter.ai/docs/faq',
+          docsUrl: 'https://openrouter.ai/docs/guides/overview/auth/management-api-keys',
           keyPlaceholder: 'Paste OpenRouter API key',
           keyHelp: 'Create an OpenRouter API key in your OpenRouter account, then paste it here.',
           baseUrlHelp: 'Leave the default OpenRouter endpoint unless you use your own proxy.',
