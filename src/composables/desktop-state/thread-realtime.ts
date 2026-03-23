@@ -164,6 +164,21 @@ export function createThreadRealtime(params: {
 
   function applyRealtimeUpdates(notification: RpcNotification): void {
     if (handleServerRequestNotification(notification)) return
+    if (notification.method === 'xcodex/turnReconciled') {
+      const reconciledThreadId = extractThreadIdFromNotification(notification)
+      if (reconciledThreadId) {
+        activeReasoningItemIdRef.value = ''
+        clearActiveTurnId(reconciledThreadId)
+        clearActiveLiveTextSegment(reconciledThreadId)
+        setTurnActivityForThread(reconciledThreadId, null)
+        updateLedgerThreadState(reconciledThreadId, (current) => ({
+          ...current,
+          phase: current.liveEventLog.length > 0 ? 'finalizing' : 'settled',
+          activeTurnId: '',
+        }))
+      }
+      return
+    }
     const threadNameUpdate = readNotificationThreadName(notification)
     if (threadNameUpdate) {
       threadTitleById.value = { ...threadTitleById.value, [threadNameUpdate.threadId]: threadNameUpdate.threadName }
@@ -335,11 +350,12 @@ export function createThreadRealtime(params: {
   function queueEventDrivenSync(notification: RpcNotification): void {
     const threadId = extractThreadIdFromNotification(notification)
     const method = notification.method
-    const shouldRefreshThreadMessages = method === 'turn/completed'
+    const shouldRefreshThreadMessages = method === 'turn/completed' || method === 'xcodex/turnReconciled'
     const shouldRefreshThreads =
       method === 'thread/started' ||
       method === 'turn/started' ||
       method === 'turn/completed' ||
+      method === 'xcodex/turnReconciled' ||
       method === 'thread/archived' ||
       method === 'thread/unarchived' ||
       method === 'thread/closed' ||

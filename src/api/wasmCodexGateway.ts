@@ -55,6 +55,7 @@ const notificationListeners = new Set<NotificationListener>()
 let runtimeNotificationUnsubscribe: (() => void) | null = null
 let runtimeNotificationSubscribePromise: Promise<void> | null = null
 const completionReconcileTimerByTurnId = new Map<string, number>()
+const TURN_RECONCILED_NOTIFICATION_METHOD = 'xcodex/turnReconciled'
 
 const THREAD_LIST_SOURCE_KINDS: ThreadSourceKind[] = [
   'cli',
@@ -178,13 +179,14 @@ function scheduleTurnCompletionReconcile(threadId: string, turnId: string): void
       const status = typeof turnRecord?.status === 'string' ? turnRecord.status : ''
       if (turnRecord && status && status !== 'inProgress') {
         // Workaround: very fast WASM turns can finish before the normal live notification
-        // path leaves the UI's "Thinking" state. A synthetic completion notification nudges
-        // the existing sync path to reconcile the persisted transcript without a page reload.
+        // path unwinds local UI state. Trigger a local snapshot reconcile without
+        // pretending that the server delivered a terminal protocol event.
         emitNotification({
-          method: 'turn/completed',
+          method: TURN_RECONCILED_NOTIFICATION_METHOD,
           params: {
             threadId,
-            turn: turnRecord,
+            turnId,
+            status,
           },
           atIso: new Date().toISOString(),
         })
@@ -218,13 +220,6 @@ async function readStoredThreadSessionItemCount(threadId: string): Promise<numbe
     }
     request.onerror = () => reject(request.error ?? new Error(`failed to read wasm session ${threadId}`))
   })
-}
-
-function isStaleLoadedThreadPayload(payload: ThreadReadResponse): boolean {
-  const turns = Array.isArray(payload.thread?.turns) ? payload.thread.turns : []
-  return turns.length > 0
-    && turns.every((turn) => Array.isArray(turn.items) && turn.items.length === 0)
-    && turns.some((turn) => turn.status === 'inProgress')
 }
 
 type StoredSession = Awaited<ReturnType<typeof wasmStorage.loadStoredThreadSession>>
@@ -732,14 +727,6 @@ export async function readThreadRaw(threadId: string): Promise<ThreadReadRespons
       }
     } else {
       throw error
-    }
-  }
-  if (isStaleLoadedThreadPayload(payload)) {
-    const storedSession = await wasmStorage.loadStoredThreadSession(threadId).catch(() => null)
-    const storedItemCount = Array.isArray(storedSession?.items) ? storedSession.items.length : 0
-    if (storedItemCount > 0 && storedSession) {
-      await callWasmRpc('thread/unsubscribe', { threadId }).catch(() => null)
-      payload = toStoredSessionPayload(storedSession)
     }
   }
   await syncThreadIndexFromThread(payload.thread)
