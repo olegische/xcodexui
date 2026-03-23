@@ -28,6 +28,11 @@ const router = createRouter({
       component: EmptyRouteView,
     },
     {
+      path: '/browser-workspace-file',
+      name: 'browser-workspace-file',
+      component: EmptyRouteView,
+    },
+    {
       path: '/new-thread',
       redirect: { name: 'home' },
     },

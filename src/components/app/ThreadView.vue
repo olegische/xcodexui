@@ -8,6 +8,7 @@
         :scroll-state="selectedThreadScrollState"
         :live-overlay="liveOverlay"
         :is-turn-in-progress="isSelectedThreadInProgress"
+        :is-wasm-runtime="isWasmRuntime"
         :allow-rollback="!isWasmRuntime"
         :is-rolling-back="isRollingBack"
         @update-scroll-state="$emit('update-scroll-state', $event)"

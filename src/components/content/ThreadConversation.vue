@@ -231,6 +231,12 @@
 <script setup lang="ts">
 import { nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import type { ThreadScrollState, UiLiveOverlay, UiMessage } from '../../types/codex'
+import {
+  browserWorkspacePathToIndexedDbUri,
+  isBrowserWorkspacePath,
+  isIndexedDbWorkspaceUri,
+  toIndexedDbWorkspaceHref,
+} from '../../runtime/wasm/browserWorkspaceLinks'
 import IconTablerX from '../icons/IconTablerX.vue'
 import IconTablerArrowBackUp from '../icons/IconTablerArrowBackUp.vue'
 import IconTablerCopy from '../icons/IconTablerCopy.vue'
@@ -387,6 +393,7 @@ const props = defineProps<{
   activeThreadId: string
   scrollState: ThreadScrollState | null
   isTurnInProgress?: boolean
+  isWasmRuntime?: boolean
   isRollingBack?: boolean
   allowRollback?: boolean
 }>()
@@ -483,7 +490,9 @@ function trimTrailingUrlDelimiters(rawToken: string): { token: string; trailingT
 
 function splitPlainTextByLinks(text: string): InlineSegment[] {
   const segments: InlineSegment[] = []
-  const pattern = /https?:\/\/\S+/gu
+  const pattern = props.isWasmRuntime
+    ? /(?:https?:\/\/|indexeddb:\/\/|\/workspace\/)\S+/gu
+    : /(?:https?:\/\/|indexeddb:\/\/)\S+/gu
   let cursor = 0
 
   for (const match of text.matchAll(pattern)) {
@@ -496,8 +505,27 @@ function splitPlainTextByLinks(text: string): InlineSegment[] {
     }
 
     const { token, trailingText } = trimTrailingUrlDelimiters(match[0])
+    const browserWorkspaceUri = props.isWasmRuntime ? browserWorkspacePathToIndexedDbUri(token) : null
 
-    segments.push({ kind: 'url', value: token, href: token })
+    if (browserWorkspaceUri) {
+      segments.push({
+        kind: 'file',
+        value: token,
+        path: browserWorkspaceUri,
+        displayPath: token,
+        downloadName: getBasename(token),
+      })
+    } else if (isIndexedDbWorkspaceUri(token)) {
+      segments.push({
+        kind: 'file',
+        value: token,
+        path: token,
+        displayPath: token,
+        downloadName: getBasename(token),
+      })
+    } else {
+      segments.push({ kind: 'url', value: token, href: token })
+    }
     if (trailingText) {
       segments.push({ kind: 'text', value: trailingText })
     }
@@ -613,20 +641,30 @@ function parseInlineSegments(text: string): InlineSegment[] {
 
     const token = text.slice(cursor + openLength, closingStart)
     if (token.length > 0) {
-      const fileReference = parseFileReference(token)
-      if (fileReference) {
-        const displayPath = fileReference.line
-          ? `${fileReference.path}:${String(fileReference.line)}`
-          : fileReference.path
+      if (isIndexedDbWorkspaceUri(token)) {
         segments.push({
           kind: 'file',
           value: token,
-          path: fileReference.path,
-          displayPath,
-          downloadName: getBasename(fileReference.path),
+          path: token,
+          displayPath: token,
+          downloadName: getBasename(token),
         })
       } else {
-        segments.push({ kind: 'code', value: token })
+        const fileReference = parseFileReference(token)
+        if (fileReference) {
+          const displayPath = fileReference.line
+            ? `${fileReference.path}:${String(fileReference.line)}`
+            : fileReference.path
+          segments.push({
+            kind: 'file',
+            value: token,
+            path: fileReference.path,
+            displayPath,
+            downloadName: getBasename(fileReference.path),
+          })
+        } else {
+          segments.push({ kind: 'code', value: token })
+        }
       }
     } else {
       segments.push({ kind: 'text', value: `${delimiter}${delimiter}` })
@@ -672,6 +710,13 @@ function toRenderableImageUrl(value: string): string {
 function toBrowseUrl(pathValue: string): string {
   const normalized = pathValue.trim()
   if (!normalized) return '#'
+  if (props.isWasmRuntime && isBrowserWorkspacePath(normalized)) {
+    const browserWorkspaceUri = browserWorkspacePathToIndexedDbUri(normalized)
+    return browserWorkspaceUri ? toIndexedDbWorkspaceHref(browserWorkspaceUri) : '#'
+  }
+  if (isIndexedDbWorkspaceUri(normalized)) {
+    return toIndexedDbWorkspaceHref(normalized)
+  }
   const looksLikeAbsolutePath = (candidate: string): boolean => (
     candidate.startsWith('/') || /^[A-Za-z]:[\\/]/u.test(candidate)
   )
