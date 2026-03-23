@@ -73,16 +73,22 @@
           <input :value="draft.apiKey" class="settings-input" type="password" :placeholder="providerSetupGuide.keyPlaceholder" @input="$emit('update:draft', { ...draft, apiKey: ($event.target as HTMLInputElement).value })" />
         </label>
 
-        <section v-if="showProviderSetupGuide" class="settings-provider-guide" aria-label="Provider setup guide">
+        <section
+          v-if="showProviderSetupGuide"
+          class="settings-provider-guide"
+          :class="{ 'settings-provider-guide-dark': isDarkTheme }"
+          aria-label="Provider setup guide"
+        >
           <div class="settings-provider-guide-copy">
-            <p class="settings-provider-guide-title">{{ providerSetupGuide.title }}</p>
-            <p class="settings-provider-guide-description">{{ providerSetupGuide.description }}</p>
-            <ul class="settings-provider-guide-steps">
+            <p class="settings-provider-guide-title" :class="{ 'settings-provider-guide-title-dark': isDarkTheme }">{{ providerSetupGuide.title }}</p>
+            <p class="settings-provider-guide-description" :class="{ 'settings-provider-guide-description-dark': isDarkTheme }">{{ providerSetupGuide.description }}</p>
+            <ul class="settings-provider-guide-steps" :class="{ 'settings-provider-guide-steps-dark': isDarkTheme }">
               <li v-for="step in providerSetupGuide.steps" :key="step">{{ step }}</li>
             </ul>
           </div>
           <a
             class="settings-provider-guide-link"
+            :class="{ 'settings-provider-guide-link-dark': isDarkTheme }"
             :href="providerSetupGuide.docsUrl"
             target="_blank"
             rel="noopener noreferrer"
@@ -169,7 +175,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import type { DemoTransportMode, RuntimeMode, XrouterProvider } from 'xcodex-runtime/types'
 import IconTablerChevronLeft from '../icons/IconTablerChevronLeft.vue'
 import type {
@@ -200,6 +206,29 @@ const providerSetupGuide = computed<WasmProviderSetupGuide>(() =>
 )
 
 const showProviderSetupGuide = computed(() => props.draft.apiKey.trim().length === 0)
+const isDarkTheme = ref(false)
+
+let themeObserver: MutationObserver | null = null
+
+function syncThemeState(): void {
+  isDarkTheme.value = typeof document !== 'undefined' && document.documentElement.classList.contains('dark')
+}
+
+onMounted(() => {
+  syncThemeState()
+  if (typeof document === 'undefined') return
+  themeObserver = new MutationObserver(() => {
+    syncThemeState()
+  })
+  themeObserver.observe(document.documentElement, {
+    attributes: true,
+    attributeFilter: ['class'],
+  })
+})
+
+onBeforeUnmount(() => {
+  themeObserver?.disconnect()
+})
 
 defineEmits<{
   (event: 'back'): void
@@ -262,7 +291,7 @@ defineEmits<{
 }
 
 .settings-provider-guide {
-  @apply flex flex-col gap-4 bg-white px-5 py-4 sm:flex-row sm:items-start sm:justify-between;
+  @apply flex flex-col gap-4 border-y border-zinc-200 bg-zinc-50 px-5 py-4 sm:flex-row sm:items-start sm:justify-between;
 }
 
 .settings-provider-guide-copy {
@@ -283,6 +312,26 @@ defineEmits<{
 
 .settings-provider-guide-link {
   @apply inline-flex shrink-0 items-center justify-center rounded-[1rem] border border-zinc-200 bg-zinc-50 px-3 py-2 text-[0.82rem] font-medium text-zinc-800 no-underline transition hover:bg-zinc-100;
+}
+
+.settings-provider-guide-dark {
+  @apply border-zinc-800 bg-zinc-900/60;
+}
+
+.settings-provider-guide-title-dark {
+  @apply text-zinc-100;
+}
+
+.settings-provider-guide-description-dark {
+  @apply text-zinc-400;
+}
+
+.settings-provider-guide-steps-dark {
+  @apply text-zinc-300;
+}
+
+.settings-provider-guide-link-dark {
+  @apply border-zinc-700 bg-zinc-800 text-zinc-100 hover:bg-zinc-700;
 }
 
 .settings-form-row {
