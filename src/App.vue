@@ -97,10 +97,6 @@
             @reload="reloadRuntimeSettingsScreen"
             @delete-config="deleteCurrentWasmProviderConfig"
           />
-          <BrowserWorkspaceFileView
-            v-else-if="isBrowserWorkspaceFileRoute"
-            :uri="browserWorkspaceFileUri"
-          />
           <SkillsHub v-else-if="!isWasmRuntime && isSkillsRoute" @skills-changed="onSkillsChanged" />
           <HomeView
             v-else-if="isHomeRoute"
@@ -181,7 +177,6 @@ import AppSidebar from './components/app/AppSidebar.vue'
 import HomeView from './components/app/HomeView.vue'
 import RuntimeSettingsView from './components/app/RuntimeSettingsView.vue'
 import ThreadView from './components/app/ThreadView.vue'
-import BrowserWorkspaceFileView from './components/content/BrowserWorkspaceFileView.vue'
 import { useDesktopState } from './composables/useDesktopState'
 import { useMobile } from './composables/useMobile'
 import { useAppShellPrefs } from './composables/useAppShellPrefs'
@@ -189,7 +184,6 @@ import { useNewThreadSetup } from './composables/useNewThreadSetup'
 import { useSidebarThreadSearch } from './composables/useSidebarThreadSearch'
 import { useWasmRuntimeSettings } from './composables/useWasmRuntimeSettings'
 import { BROWSER_WORKSPACE_ROOT, IS_WASM_RUNTIME } from './config/runtime'
-import { indexedDbWorkspaceUriToPath } from './runtime/wasm/browserWorkspaceLinks'
 import type { ReasoningEffort, ThreadScrollState } from './types/codex'
 
 const isWasmRuntime = IS_WASM_RUNTIME
@@ -330,18 +324,8 @@ const knownThreadIdSet = computed(() => {
 const isHomeRoute = computed(() => route.name === 'home')
 const isSkillsRoute = computed(() => !isWasmRuntime && route.name === 'skills')
 const isRuntimeSettingsRoute = computed(() => route.name === 'settings' && runtimeSettingsTab.value === 'runtime')
-const isBrowserWorkspaceFileRoute = computed(() => route.name === 'browser-workspace-file')
-const browserWorkspaceFileUri = computed(() => {
-  const rawUri = route.query.uri
-  return typeof rawUri === 'string' ? rawUri : ''
-})
 const isChaosMode = computed(() => isWasmRuntime && wasmSettingsDraft.value.runtimeMode === 'chaos')
 const contentTitle = computed(() => {
-  if (isBrowserWorkspaceFileRoute.value) {
-    const filePath = indexedDbWorkspaceUriToPath(browserWorkspaceFileUri.value)
-    const label = filePath?.split('/').filter(Boolean).pop()
-    return label || 'Browser workspace file'
-  }
   if (isSkillsRoute.value) return 'Skills'
   if (isHomeRoute.value) return 'New thread'
   return selectedThread.value?.title ?? 'Choose a thread'
@@ -377,7 +361,6 @@ const canExportThread = computed(() =>
   !isHomeRoute.value
   && !isSkillsRoute.value
   && !isRuntimeSettingsRoute.value
-  && !isBrowserWorkspaceFileRoute.value
   && !!selectedThread.value
   && filteredMessages.value.length > 0,
 )
@@ -443,7 +426,7 @@ watch(
   async (threadId) => {
     if (!hasInitialized.value) return
     if (isRouteSyncInProgress.value) return
-    if (isHomeRoute.value || isSkillsRoute.value || isRuntimeSettingsRoute.value || isBrowserWorkspaceFileRoute.value) return
+    if (isHomeRoute.value || isSkillsRoute.value || isRuntimeSettingsRoute.value) return
 
     if (!threadId) {
       if (route.name !== 'home') await router.replace({ name: 'home' })
@@ -752,7 +735,6 @@ async function syncThreadSelectionWithRoute(): Promise<void> {
     if (
       route.name === 'home'
       || route.name === 'settings'
-      || route.name === 'browser-workspace-file'
       || (!isWasmRuntime && route.name === 'skills')
     ) {
       if (selectedThreadId.value !== '') await selectThread('')

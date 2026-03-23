@@ -2,6 +2,7 @@ import { createLocalStorageWorkspaceAdapter } from 'xcodex-runtime'
 import { BROWSER_WORKSPACE_ROOT } from '../../config/runtime'
 
 const INDEXEDDB_WORKSPACE_PREFIX = 'indexeddb://workspace'
+const BLOB_REVOKE_DELAY_MS = 60_000
 
 type WorkspaceReadResult = {
   path?: string
@@ -37,8 +38,8 @@ export function browserWorkspacePathToIndexedDbUri(value: string): string | null
   return `${INDEXEDDB_WORKSPACE_PREFIX}/${relativePath}`
 }
 
-export function toIndexedDbWorkspaceHref(value: string): string {
-  return `/#/browser-workspace-file?uri=${encodeURIComponent(value.trim())}`
+export function isBrowserWorkspaceTarget(value: string): boolean {
+  return isIndexedDbWorkspaceUri(value) || isBrowserWorkspacePath(value)
 }
 
 export async function readIndexedDbWorkspaceFile(value: string): Promise<{ path: string; content: string }> {
@@ -60,4 +61,30 @@ export async function readIndexedDbWorkspaceFile(value: string): Promise<{ path:
     path: result.path,
     content: result.content,
   }
+}
+
+function mimeTypeForPath(path: string): string {
+  const normalized = path.toLowerCase()
+  if (normalized.endsWith('.md')) return 'text/markdown;charset=utf-8'
+  if (normalized.endsWith('.json')) return 'application/json;charset=utf-8'
+  if (normalized.endsWith('.html') || normalized.endsWith('.htm')) return 'text/html;charset=utf-8'
+  if (normalized.endsWith('.css')) return 'text/css;charset=utf-8'
+  if (normalized.endsWith('.js')) return 'text/javascript;charset=utf-8'
+  if (normalized.endsWith('.ts') || normalized.endsWith('.tsx')) return 'text/plain;charset=utf-8'
+  if (normalized.endsWith('.yml') || normalized.endsWith('.yaml')) return 'text/yaml;charset=utf-8'
+  if (normalized.endsWith('.xml')) return 'application/xml;charset=utf-8'
+  return 'text/plain;charset=utf-8'
+}
+
+export async function openBrowserWorkspaceFile(value: string): Promise<void> {
+  const target = isIndexedDbWorkspaceUri(value) ? value : browserWorkspacePathToIndexedDbUri(value)
+  if (!target) {
+    throw new Error('Unsupported browser workspace file target.')
+  }
+
+  const { path, content } = await readIndexedDbWorkspaceFile(target)
+  const blob = new Blob([content], { type: mimeTypeForPath(path) })
+  const blobUrl = URL.createObjectURL(blob)
+  window.open(blobUrl, '_blank', 'noopener,noreferrer')
+  window.setTimeout(() => URL.revokeObjectURL(blobUrl), BLOB_REVOKE_DELAY_MS)
 }

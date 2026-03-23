@@ -85,6 +85,7 @@
                     target="_blank"
                     rel="noopener noreferrer"
                     :title="att.path"
+                    @click="onFileLinkClick($event, att.path)"
                   >
                     {{ att.path }}
                   </a>
@@ -143,6 +144,7 @@
                           target="_blank"
                           rel="noopener noreferrer"
                           :title="segment.path"
+                          @click="onFileLinkClick($event, segment.path)"
                         >
                           {{ segment.displayPath }}
                         </a>
@@ -233,9 +235,10 @@ import { nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import type { ThreadScrollState, UiLiveOverlay, UiMessage } from '../../types/codex'
 import {
   browserWorkspacePathToIndexedDbUri,
+  isBrowserWorkspaceTarget,
   isBrowserWorkspacePath,
   isIndexedDbWorkspaceUri,
-  toIndexedDbWorkspaceHref,
+  openBrowserWorkspaceFile,
 } from '../../runtime/wasm/browserWorkspaceLinks'
 import IconTablerX from '../icons/IconTablerX.vue'
 import IconTablerArrowBackUp from '../icons/IconTablerArrowBackUp.vue'
@@ -710,12 +713,8 @@ function toRenderableImageUrl(value: string): string {
 function toBrowseUrl(pathValue: string): string {
   const normalized = pathValue.trim()
   if (!normalized) return '#'
-  if (props.isWasmRuntime && isBrowserWorkspacePath(normalized)) {
-    const browserWorkspaceUri = browserWorkspacePathToIndexedDbUri(normalized)
-    return browserWorkspaceUri ? toIndexedDbWorkspaceHref(browserWorkspaceUri) : '#'
-  }
-  if (isIndexedDbWorkspaceUri(normalized)) {
-    return toIndexedDbWorkspaceHref(normalized)
+  if (props.isWasmRuntime && isBrowserWorkspaceTarget(normalized)) {
+    return '#'
   }
   const looksLikeAbsolutePath = (candidate: string): boolean => (
     candidate.startsWith('/') || /^[A-Za-z]:[\\/]/u.test(candidate)
@@ -731,6 +730,12 @@ function toBrowseUrl(pathValue: string): string {
   }
 
   return '#'
+}
+
+function onFileLinkClick(event: MouseEvent, pathValue: string): void {
+  if (!props.isWasmRuntime || !isBrowserWorkspaceTarget(pathValue)) return
+  event.preventDefault()
+  void openBrowserWorkspaceFile(pathValue)
 }
 
 function parseMessageBlocks(text: string): MessageBlock[] {
