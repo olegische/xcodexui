@@ -73,7 +73,7 @@
           <input :value="draft.apiKey" class="settings-input" type="password" :placeholder="providerSetupGuide.keyPlaceholder" @input="$emit('update:draft', { ...draft, apiKey: ($event.target as HTMLInputElement).value })" />
         </label>
 
-        <section class="settings-provider-guide" aria-label="Provider setup guide">
+        <section v-if="showProviderSetupGuide" class="settings-provider-guide" aria-label="Provider setup guide">
           <div class="settings-provider-guide-copy">
             <p class="settings-provider-guide-title">{{ providerSetupGuide.title }}</p>
             <p class="settings-provider-guide-description">{{ providerSetupGuide.description }}</p>
@@ -198,6 +198,8 @@ const providerSetupGuide = computed<WasmProviderSetupGuide>(() =>
     xrouterProvider: props.draft.xrouterProvider,
   }),
 )
+
+const showProviderSetupGuide = computed(() => props.draft.apiKey.trim().length === 0)
 
 defineEmits<{
   (event: 'back'): void
