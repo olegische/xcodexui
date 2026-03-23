@@ -456,6 +456,31 @@ function parseFileReference(value: string): { path: string; line: number | null 
   return { path: pathValue, line }
 }
 
+function countCharacters(value: string, char: string): number {
+  let count = 0
+  for (const currentChar of value) {
+    if (currentChar === char) count += 1
+  }
+  return count
+}
+
+function trimTrailingUrlDelimiters(rawToken: string): { token: string; trailingText: string } {
+  let token = rawToken
+  let trailingText = ''
+
+  while (/[.,;:]$/u.test(token)) {
+    trailingText = token.slice(-1) + trailingText
+    token = token.slice(0, -1)
+  }
+
+  while (token.endsWith(')') && countCharacters(token, ')') > countCharacters(token, '(')) {
+    trailingText = ')' + trailingText
+    token = token.slice(0, -1)
+  }
+
+  return { token, trailingText }
+}
+
 function splitPlainTextByLinks(text: string): InlineSegment[] {
   const segments: InlineSegment[] = []
   const pattern = /https?:\/\/\S+/gu
@@ -470,16 +495,11 @@ function splitPlainTextByLinks(text: string): InlineSegment[] {
       segments.push({ kind: 'text', value: text.slice(cursor, start) })
     }
 
-    let token = match[0]
-    let trailingPunctuation = ''
-    while (/[.,;:]$/u.test(token)) {
-      trailingPunctuation = token.slice(-1) + trailingPunctuation
-      token = token.slice(0, -1)
-    }
+    const { token, trailingText } = trimTrailingUrlDelimiters(match[0])
 
     segments.push({ kind: 'url', value: token, href: token })
-    if (trailingPunctuation) {
-      segments.push({ kind: 'text', value: trailingPunctuation })
+    if (trailingText) {
+      segments.push({ kind: 'text', value: trailingText })
     }
 
     cursor = end
