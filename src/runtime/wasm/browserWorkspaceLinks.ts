@@ -1,7 +1,7 @@
 import { createLocalStorageWorkspaceAdapter } from 'xcodex-runtime'
 import { BROWSER_WORKSPACE_ROOT } from '../../config/runtime'
 
-const INDEXEDDB_WORKSPACE_PREFIX = 'indexeddb://workspace'
+const LOCALSTORE_WORKSPACE_PREFIX = 'localstore://workspace'
 const BLOB_REVOKE_DELAY_MS = 60_000
 
 type WorkspaceReadResult = {
@@ -9,15 +9,15 @@ type WorkspaceReadResult = {
   content?: string
 }
 
-export function isIndexedDbWorkspaceUri(value: string): boolean {
-  return value.trim().startsWith(`${INDEXEDDB_WORKSPACE_PREFIX}/`)
+export function isLocalstoreWorkspaceUri(value: string): boolean {
+  return value.trim().startsWith(`${LOCALSTORE_WORKSPACE_PREFIX}/`)
 }
 
-export function indexedDbWorkspaceUriToPath(value: string): string | null {
+export function localstoreWorkspaceUriToPath(value: string): string | null {
   const trimmed = value.trim()
-  if (!isIndexedDbWorkspaceUri(trimmed)) return null
+  if (!isLocalstoreWorkspaceUri(trimmed)) return null
 
-  const relativePath = trimmed.slice(INDEXEDDB_WORKSPACE_PREFIX.length).replace(/^\/+/u, '')
+  const relativePath = trimmed.slice(LOCALSTORE_WORKSPACE_PREFIX.length).replace(/^\/+/u, '')
   if (!relativePath) return BROWSER_WORKSPACE_ROOT
 
   return `${BROWSER_WORKSPACE_ROOT}/${relativePath}`
@@ -28,24 +28,24 @@ export function isBrowserWorkspacePath(value: string): boolean {
   return trimmed === BROWSER_WORKSPACE_ROOT || trimmed.startsWith(`${BROWSER_WORKSPACE_ROOT}/`)
 }
 
-export function browserWorkspacePathToIndexedDbUri(value: string): string | null {
+export function browserWorkspacePathToLocalstoreUri(value: string): string | null {
   const trimmed = value.trim()
   if (!isBrowserWorkspacePath(trimmed)) return null
 
   const relativePath = trimmed.slice(BROWSER_WORKSPACE_ROOT.length).replace(/^\/+/u, '')
-  if (!relativePath) return `${INDEXEDDB_WORKSPACE_PREFIX}/`
+  if (!relativePath) return `${LOCALSTORE_WORKSPACE_PREFIX}/`
 
-  return `${INDEXEDDB_WORKSPACE_PREFIX}/${relativePath}`
+  return `${LOCALSTORE_WORKSPACE_PREFIX}/${relativePath}`
 }
 
 export function isBrowserWorkspaceTarget(value: string): boolean {
-  return isIndexedDbWorkspaceUri(value) || isBrowserWorkspacePath(value)
+  return isLocalstoreWorkspaceUri(value) || isBrowserWorkspacePath(value)
 }
 
-export async function readIndexedDbWorkspaceFile(value: string): Promise<{ path: string; content: string }> {
-  const path = indexedDbWorkspaceUriToPath(value)
+export async function readLocalstoreWorkspaceFile(value: string): Promise<{ path: string; content: string }> {
+  const path = localstoreWorkspaceUriToPath(value)
   if (!path) {
-    throw new Error('Unsupported IndexedDB workspace URI.')
+    throw new Error('Unsupported localstore workspace URI.')
   }
 
   const workspace = createLocalStorageWorkspaceAdapter({
@@ -77,12 +77,12 @@ function mimeTypeForPath(path: string): string {
 }
 
 export async function openBrowserWorkspaceFile(value: string): Promise<void> {
-  const target = isIndexedDbWorkspaceUri(value) ? value : browserWorkspacePathToIndexedDbUri(value)
+  const target = isLocalstoreWorkspaceUri(value) ? value : browserWorkspacePathToLocalstoreUri(value)
   if (!target) {
     throw new Error('Unsupported browser workspace file target.')
   }
 
-  const { path, content } = await readIndexedDbWorkspaceFile(target)
+  const { path, content } = await readLocalstoreWorkspaceFile(target)
   const blob = new Blob([content], { type: mimeTypeForPath(path) })
   const blobUrl = URL.createObjectURL(blob)
   window.open(blobUrl, '_blank', 'noopener,noreferrer')

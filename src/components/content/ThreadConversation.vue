@@ -234,10 +234,10 @@
 import { nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import type { ThreadScrollState, UiLiveOverlay, UiMessage } from '../../types/codex'
 import {
-  browserWorkspacePathToIndexedDbUri,
+  browserWorkspacePathToLocalstoreUri,
   isBrowserWorkspaceTarget,
   isBrowserWorkspacePath,
-  isIndexedDbWorkspaceUri,
+  isLocalstoreWorkspaceUri,
   openBrowserWorkspaceFile,
 } from '../../runtime/wasm/browserWorkspaceLinks'
 import IconTablerX from '../icons/IconTablerX.vue'
@@ -494,8 +494,8 @@ function trimTrailingUrlDelimiters(rawToken: string): { token: string; trailingT
 function splitPlainTextByLinks(text: string): InlineSegment[] {
   const segments: InlineSegment[] = []
   const pattern = props.isWasmRuntime
-    ? /(?:https?:\/\/|indexeddb:\/\/|\/workspace\/)\S+/gu
-    : /(?:https?:\/\/|indexeddb:\/\/)\S+/gu
+    ? /(?:https?:\/\/|localstore:\/\/|\/workspace\/)\S+/gu
+    : /(?:https?:\/\/|localstore:\/\/)\S+/gu
   let cursor = 0
 
   for (const match of text.matchAll(pattern)) {
@@ -508,7 +508,7 @@ function splitPlainTextByLinks(text: string): InlineSegment[] {
     }
 
     const { token, trailingText } = trimTrailingUrlDelimiters(match[0])
-    const browserWorkspaceUri = props.isWasmRuntime ? browserWorkspacePathToIndexedDbUri(token) : null
+    const browserWorkspaceUri = props.isWasmRuntime ? browserWorkspacePathToLocalstoreUri(token) : null
 
     if (browserWorkspaceUri) {
       segments.push({
@@ -518,7 +518,7 @@ function splitPlainTextByLinks(text: string): InlineSegment[] {
         displayPath: token,
         downloadName: getBasename(token),
       })
-    } else if (isIndexedDbWorkspaceUri(token)) {
+    } else if (isLocalstoreWorkspaceUri(token)) {
       segments.push({
         kind: 'file',
         value: token,
@@ -644,7 +644,7 @@ function parseInlineSegments(text: string): InlineSegment[] {
 
     const token = text.slice(cursor + openLength, closingStart)
     if (token.length > 0) {
-      if (isIndexedDbWorkspaceUri(token)) {
+      if (isLocalstoreWorkspaceUri(token)) {
         segments.push({
           kind: 'file',
           value: token,
