@@ -1,5 +1,4 @@
 import {
-  DEFAULT_CODEX_CONFIG,
   activeProviderApiKey,
   createIndexedDbCodexStorage,
   detectTransportMode,
@@ -24,6 +23,19 @@ const STORE_NAMES = {
   userConfig: 'userConfig',
 } as const
 
+const DEFAULT_WASM_CODEX_CONFIG = materializeCodexConfig({
+  transportMode: 'xrouter-browser',
+  model: '',
+  runtimeMode: 'default',
+  browserSecurity: getWasmRuntimePolicyPreset('default').browserSecurity,
+  modelReasoningEffort: 'medium',
+  personality: 'pragmatic',
+  displayName: 'OpenRouter via Browser Runtime',
+  baseUrl: 'https://openrouter.ai/api/v1',
+  apiKey: '',
+  xrouterProvider: 'openrouter',
+})
+
 const storage = createIndexedDbCodexStorage<
   AuthState,
   CodexCompatibleConfig,
@@ -32,7 +44,7 @@ const storage = createIndexedDbCodexStorage<
 >({
   dbName: 'codex-wasm-browser-terminal',
   dbVersion: 6,
-  defaultConfig: DEFAULT_CODEX_CONFIG,
+  defaultConfig: DEFAULT_WASM_CODEX_CONFIG,
   normalizeConfig: normalizeCodexConfig,
   legacySessionStoreName: 'sessions',
   keys: {

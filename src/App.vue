@@ -85,6 +85,7 @@
             :runtime-model-options="runtimeModelOptions"
             :runtime-model-allows-manual-input="runtimeModelAllowsManualInput"
             :is-saving-wasm-settings="isSavingWasmSettings"
+            :is-connecting-openrouter-oauth="isConnectingOpenrouterOauth"
             :has-stored-wasm-provider-secret="hasStoredWasmProviderSecret"
             :wasm-settings-feedback="wasmSettingsFeedback"
             :wasm-settings-feedback-tone="wasmSettingsFeedbackTone"
@@ -93,6 +94,7 @@
             @runtime-mode-change="onWasmRuntimeModeChange"
             @transport-mode-change="onWasmTransportModeChange"
             @xrouter-provider-change="onWasmXrouterProviderChange"
+            @openrouter-oauth-connect="connectOpenRouterOauth"
             @save="saveCurrentWasmRuntimeSettings"
             @reload="reloadRuntimeSettingsScreen"
             @delete-config="deleteCurrentWasmProviderConfig"
@@ -270,10 +272,12 @@ const {
   derivedRuntimeStatus,
   showWasmRuntimeSetupCta,
   isSavingWasmSettings,
+  isConnectingOpenRouterOauth: isConnectingOpenrouterOauth,
   refreshWasmRuntimeSettings,
   onWasmRuntimeModeChange,
   onWasmTransportModeChange,
   onWasmXrouterProviderChange,
+  connectOpenRouterOauth,
   saveCurrentWasmRuntimeSettings,
   reloadRuntimeSettingsScreen,
   deleteCurrentWasmProviderConfig,

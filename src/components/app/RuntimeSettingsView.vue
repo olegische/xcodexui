@@ -86,7 +86,18 @@
               <li v-for="step in providerSetupGuide.steps" :key="step">{{ step }}</li>
             </ul>
           </div>
+          <button
+            v-if="showOpenRouterOauthGuideAction"
+            class="settings-provider-guide-link"
+            :class="{ 'settings-provider-guide-link-dark': isDarkTheme }"
+            type="button"
+            :disabled="isSavingWasmSettings || isConnectingOpenrouterOauth"
+            @click="$emit('openrouter-oauth-connect')"
+          >
+            {{ isConnectingOpenrouterOauth ? 'Connecting…' : 'Connect with OpenRouter' }}
+          </button>
           <a
+            v-else
             class="settings-provider-guide-link"
             :class="{ 'settings-provider-guide-link-dark': isDarkTheme }"
             :href="providerSetupGuide.docsUrl"
@@ -193,6 +204,7 @@ const props = defineProps<{
   runtimeModelOptions: Array<{ value: string; label: string }>
   runtimeModelAllowsManualInput: boolean
   isSavingWasmSettings: boolean
+  isConnectingOpenrouterOauth: boolean
   hasStoredWasmProviderSecret: boolean
   wasmSettingsFeedback: string
   wasmSettingsFeedbackTone: 'neutral' | 'error'
@@ -206,6 +218,11 @@ const providerSetupGuide = computed<WasmProviderSetupGuide>(() =>
 )
 
 const showProviderSetupGuide = computed(() => props.draft.apiKey.trim().length === 0)
+const showOpenRouterOauthGuideAction = computed(() =>
+  showProviderSetupGuide.value
+  && props.draft.transportMode === 'xrouter-browser'
+  && props.draft.xrouterProvider === 'openrouter',
+)
 const isDarkTheme = ref(false)
 
 let themeObserver: MutationObserver | null = null
@@ -236,6 +253,7 @@ defineEmits<{
   (event: 'runtime-mode-change', payload: RuntimeMode): void
   (event: 'transport-mode-change', payload: DemoTransportMode): void
   (event: 'xrouter-provider-change', payload: XrouterProvider): void
+  (event: 'openrouter-oauth-connect'): void
   (event: 'save'): void
   (event: 'reload'): void
   (event: 'delete-config'): void

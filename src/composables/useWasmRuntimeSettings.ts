@@ -15,11 +15,18 @@ import {
   type WasmRuntimeDraft,
   type WasmRuntimeStatus,
 } from '../runtime/wasm/settings'
+import {
+  consumeOpenRouterOauthCallback,
+  isOpenRouterOauthSupported,
+  startOpenRouterOauthFlow,
+} from '../runtime/wasm/openrouterOAuth'
 
 type UseWasmRuntimeSettingsOptions = {
   enabled: boolean
   refreshAll: () => Promise<void>
 }
+
+let pendingOpenRouterOauthCallback: Promise<Awaited<ReturnType<typeof consumeOpenRouterOauthCallback>>> | null = null
 
 export function useWasmRuntimeSettings(options: UseWasmRuntimeSettingsOptions) {
   const wasmSettingsDraft = ref<WasmRuntimeDraft>({
@@ -43,6 +50,7 @@ export function useWasmRuntimeSettings(options: UseWasmRuntimeSettingsOptions) {
   const hasStoredWasmProviderSecret = ref(false)
   const wasmRuntimeModelIds = ref<string[]>([])
   const isSavingWasmSettings = ref(false)
+  const isConnectingOpenRouterOauth = ref(false)
   const savedRuntimeMode = ref<RuntimeMode>('default')
   const runtimePolicyOptions = getWasmRuntimePolicyPresetOptions()
 
@@ -82,15 +90,25 @@ export function useWasmRuntimeSettings(options: UseWasmRuntimeSettingsOptions) {
   async function refreshWasmRuntimeSettings(): Promise<void> {
     if (!options.enabled) return
     try {
+      const oauthResult = await maybeConsumeOpenRouterOauthCallback()
+      if (oauthResult.status === 'success') {
+        await finalizeOpenRouterOauth(oauthResult.key, options.refreshAll)
+      }
+
       const [draft, status] = await Promise.all([loadWasmRuntimeDraft(), getWasmRuntimeStatus()])
       wasmSettingsDraft.value = draft
       savedRuntimeMode.value = draft.runtimeMode
       wasmRuntimeStatus.value = status
-      void refreshWasmRuntimeModelOptions(draft)
+      void refreshWasmRuntimeModelOptions(wasmSettingsDraft.value)
       hasStoredWasmProviderSecret.value = await hasStoredWasmProviderConfig({
-        transportMode: draft.transportMode,
-        xrouterProvider: draft.xrouterProvider,
+        transportMode: wasmSettingsDraft.value.transportMode,
+        xrouterProvider: wasmSettingsDraft.value.xrouterProvider,
       })
+
+      if (oauthResult.status === 'success') {
+        wasmSettingsFeedback.value = 'OpenRouter connected. The runtime config was saved automatically.'
+        wasmSettingsFeedbackTone.value = 'neutral'
+      }
     } catch (error) {
       wasmRuntimeStatus.value = {
         label: 'Settings unavailable',
@@ -232,6 +250,28 @@ export function useWasmRuntimeSettings(options: UseWasmRuntimeSettingsOptions) {
     }
   }
 
+  async function connectOpenRouterOauth(): Promise<void> {
+    if (!options.enabled || isSavingWasmSettings.value || isConnectingOpenRouterOauth.value) return
+
+    if (!isOpenRouterOauthSupported()) {
+      wasmSettingsFeedback.value = 'OpenRouter OAuth is not supported in this browser. Paste an API key manually instead.'
+      wasmSettingsFeedbackTone.value = 'error'
+      return
+    }
+
+    isConnectingOpenRouterOauth.value = true
+    wasmSettingsFeedback.value = ''
+    wasmSettingsFeedbackTone.value = 'neutral'
+
+    try {
+      await startOpenRouterOauthFlow()
+    } catch (error) {
+      wasmSettingsFeedback.value = error instanceof Error ? error.message : String(error)
+      wasmSettingsFeedbackTone.value = 'error'
+      isConnectingOpenRouterOauth.value = false
+    }
+  }
+
   watch(
     () => runtimeModelOptions.value,
     (modelOptions) => {
@@ -285,6 +325,7 @@ export function useWasmRuntimeSettings(options: UseWasmRuntimeSettingsOptions) {
     wasmSettingsFeedback,
     wasmSettingsFeedbackTone,
     hasStoredWasmProviderSecret,
+    isConnectingOpenRouterOauth,
     runtimeModelAllowsManualInput,
     runtimeModelOptions,
     runtimePolicyOptions,
@@ -296,8 +337,52 @@ export function useWasmRuntimeSettings(options: UseWasmRuntimeSettingsOptions) {
     onWasmRuntimeModeChange,
     onWasmTransportModeChange,
     onWasmXrouterProviderChange,
+    connectOpenRouterOauth,
     saveCurrentWasmRuntimeSettings,
     reloadRuntimeSettingsScreen,
     deleteCurrentWasmProviderConfig,
   }
+}
+
+async function maybeConsumeOpenRouterOauthCallback() {
+  if (pendingOpenRouterOauthCallback === null) {
+    pendingOpenRouterOauthCallback = consumeOpenRouterOauthCallback()
+      .finally(() => {
+        pendingOpenRouterOauthCallback = null
+      })
+  }
+
+  const result = await pendingOpenRouterOauthCallback
+  if (result.status === 'error') {
+    throw new Error(result.message)
+  }
+  return result
+}
+
+async function finalizeOpenRouterOauth(
+  apiKey: string,
+  refreshAll: () => Promise<void>,
+): Promise<void> {
+  const currentDraft = await loadWasmRuntimeDraft()
+  const baseDraft: WasmRuntimeDraft = {
+    ...currentDraft,
+    transportMode: 'xrouter-browser',
+    xrouterProvider: 'openrouter',
+    providerDisplayName: 'OpenRouter via Browser Runtime',
+    providerBaseUrl: 'https://openrouter.ai/api/v1',
+    apiKey,
+  }
+
+  const modelIds = await listWasmModelsForDraft({
+    providerBaseUrl: baseDraft.providerBaseUrl,
+    apiKey,
+  }).catch(() => [])
+
+  const nextDraft: WasmRuntimeDraft = {
+    ...baseDraft,
+    model: baseDraft.model.trim() || modelIds[0] || '',
+  }
+
+  await saveWasmRuntimeDraft(nextDraft)
+  await refreshAll()
 }
