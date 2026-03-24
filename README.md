@@ -127,6 +127,23 @@ Supported transport families in the current code:
 The API key and provider config are stored in browser storage, not in a server-side config file.
 In the current implementation that means IndexedDB, and the key is used directly by the browser runtime rather than being handed off to a local app-server.
 
+### OpenRouter OAuth
+
+When the selected provider route is `OpenRouter` and no key is stored yet, the setup guide offers a `Connect with OpenRouter` action instead of a docs link.
+
+That flow uses OpenRouter OAuth PKCE:
+
+- the browser generates a PKCE verifier/challenge pair locally
+- the user is sent to `openrouter.ai/auth`
+- OpenRouter redirects back to the local app on `http://localhost:<port>/`
+- the app exchanges the returned `code` for a user-controlled API key via `https://openrouter.ai/api/v1/auth/keys`
+- the runtime config is saved automatically in IndexedDB and the user lands back on the start screen
+
+The PKCE verifier is kept in `sessionStorage` only for the duration of the OAuth round-trip.
+The resulting API key is stored in IndexedDB together with the wasm runtime provider config.
+
+By default, an empty wasm runtime storage state now initializes to `OpenRouter via Browser Runtime`, so the runtime bootstrap path and the settings UI use the same provider default.
+
 ## Available Tools
 
 Tool availability depends on runtime mode.
