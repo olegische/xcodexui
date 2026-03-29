@@ -13,7 +13,7 @@ import type {
 import type { RpcNotification } from '../../api/codexRpcClient'
 import { BROWSER_WORKSPACE_ROOT } from '../../config/runtime'
 import { requestBrowserToolApproval, subscribeBrowserToolApprovalNotifications } from './browserToolApprovalBridge'
-import XCODEX_WASM_BASE_INSTRUCTIONS from './prompt.md?raw'
+import XCODEX_WASM_BASE_INSTRUCTIONS from './prompt_wasm.md?raw'
 import { wasmRuntimeStorage } from './storage'
 
 type WasmBrowserRuntime = BrowserCodexProtocolClient & {
