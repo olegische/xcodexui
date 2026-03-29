@@ -50,10 +50,10 @@
           Open runtime settings
         </button>
       </div>
-      <div v-else-if="isWasmRuntime && isChaosMode" class="chaos-runtime-note">
-        <strong class="chaos-runtime-note-title">Chaos mode is active</strong>
+      <div v-else-if="isWasmRuntime && runtimeMode === 'chaos'" class="runtime-mode-note runtime-mode-note-chaos">
+        <strong class="runtime-mode-note-title">Chaos mode</strong>
         <p class="chaos-runtime-note-body">
-          Browser approvals in this mode may allow the model to inspect page storage, DOM state, and other same-origin app data.
+          {{ runtimeModePresentation.description }}
         </p>
       </div>
     </div>
@@ -72,7 +72,7 @@
       :enable-dictation="!isWasmRuntime"
       :is-turn-in-progress="false"
       :is-interrupting-turn="false"
-      :is-chaos-mode="isChaosMode"
+      :runtime-mode="runtimeMode"
       :send-with-enter="sendWithEnter"
       :in-progress-submit-mode="inProgressSendMode"
       @submit="$emit('submit', $event)"
@@ -83,16 +83,19 @@
 </template>
 
 <script setup lang="ts">
+import { computed } from 'vue'
 import ComposerDropdown from '../content/ComposerDropdown.vue'
 import ComposerRuntimeDropdown from '../content/ComposerRuntimeDropdown.vue'
 import ThreadComposer from '../content/ThreadComposer.vue'
+import type { RuntimeMode } from 'xcodex-runtime/types'
 import type { SkillInfo } from '../../api/codexGateway'
+import { getRuntimeModePresentation } from '../../runtime/wasm/runtimeModes'
 import type { ReasoningEffort } from '../../types/codex'
 import type { WasmRuntimeStatus } from '../../runtime/wasm/settings'
 
-defineProps<{
+const props = defineProps<{
   isWasmRuntime: boolean
-  isChaosMode: boolean
+  runtimeMode: RuntimeMode
   wasmHeroLogoSrc: string
   newThreadCwd: string
   newThreadFolderOptions: Array<{ value: string; label: string }>
@@ -110,6 +113,8 @@ defineProps<{
   sendWithEnter: boolean
   inProgressSendMode: 'steer' | 'queue'
 }>()
+
+const runtimeModePresentation = computed(() => getRuntimeModePresentation(props.runtimeMode))
 
 defineEmits<{
   (event: 'select-folder', payload: string): void
@@ -207,17 +212,17 @@ defineEmits<{
   @apply inline-flex shrink-0 items-center rounded-full border border-amber-200/30 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-950 transition hover:bg-white cursor-pointer;
 }
 
-.chaos-runtime-note {
+.runtime-mode-note-chaos {
   @apply mt-4 w-full max-w-xl rounded-2xl border px-4 py-3 mx-auto;
   border-color: #cc241d;
   background-color: #cc241d;
 }
 
-.chaos-runtime-note-title {
-  @apply block text-sm font-semibold text-white;
+.runtime-mode-note-title {
+  @apply text-white;
 }
 
 .chaos-runtime-note-body {
-  @apply mt-1 m-0 text-sm leading-6 text-white;
+  @apply text-white;
 }
 </style>

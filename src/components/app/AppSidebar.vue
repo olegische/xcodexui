@@ -97,10 +97,9 @@
             <span class="sidebar-settings-main">
               <span class="sidebar-settings-label">Runtime</span>
               <span
-                v-if="isChaosMode"
-                class="sidebar-settings-value sidebar-settings-value-danger"
-                style="background-color: #cc241d; color: #ffffff;"
-              >Chaos</span>
+                class="sidebar-settings-value"
+                :class="{ 'sidebar-settings-value-danger': runtimeMode === 'chaos' }"
+              >{{ runtimeModePresentation.label }}</span>
             </span>
             <IconTablerChevronRight class="sidebar-settings-row-chevron" />
           </button>
@@ -122,6 +121,8 @@ import IconTablerSearch from '../icons/IconTablerSearch.vue'
 import IconTablerChevronRight from '../icons/IconTablerChevronRight.vue'
 import IconTablerSettings from '../icons/IconTablerSettings.vue'
 import IconTablerX from '../icons/IconTablerX.vue'
+import type { RuntimeMode } from 'xcodex-runtime/types'
+import { getRuntimeModePresentation } from '../../runtime/wasm/runtimeModes'
 import type { UiProjectGroup } from '../../types/codex'
 
 const props = defineProps<{
@@ -143,7 +144,7 @@ const props = defineProps<{
   sendWithEnter: boolean
   inProgressSendMode: 'steer' | 'queue'
   darkMode: 'system' | 'light' | 'dark'
-  isChaosMode?: boolean
+  runtimeMode: RuntimeMode
 }>()
 
 defineEmits<{
@@ -173,6 +174,7 @@ defineEmits<{
 const darkModeLabel = computed(() =>
   props.darkMode === 'system' ? 'System' : props.darkMode === 'dark' ? 'Dark' : 'Light',
 )
+const runtimeModePresentation = computed(() => getRuntimeModePresentation(props.runtimeMode))
 </script>
 
 <style scoped>

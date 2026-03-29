@@ -26,8 +26,8 @@ const STORE_NAMES = {
 const DEFAULT_WASM_CODEX_CONFIG = materializeCodexConfig({
   transportMode: 'xrouter-browser',
   model: '',
-  runtimeMode: 'default',
-  browserSecurity: getWasmRuntimePolicyPreset('default').browserSecurity,
+  runtimeMode: 'chat',
+  browserSecurity: getWasmRuntimePolicyPreset('chat').browserSecurity,
   modelReasoningEffort: 'medium',
   personality: 'pragmatic',
   displayName: 'OpenRouter via Browser Runtime',
@@ -151,7 +151,7 @@ function shouldMigrateLegacyConfig(rawConfig: CodexCompatibleConfig | null): boo
 function migrateLegacyConfig(rawConfig: CodexCompatibleConfig): CodexCompatibleConfig {
   const normalized = normalizeCodexConfig(rawConfig)
   const provider = getActiveProvider(normalized)
-  const preset = getWasmRuntimePolicyPreset(normalized.runtime_mode ?? 'default')
+  const preset = getWasmRuntimePolicyPreset(normalized.runtime_mode ?? 'chat')
 
   return materializeCodexConfig({
     transportMode: detectTransportMode(normalized),

@@ -9,11 +9,13 @@ import type {
   BrowserCodexProtocolClient,
   CodexCompatibleConfig,
   ModelPreset,
+  RuntimeMode,
 } from 'xcodex-runtime/types'
 import type { RpcNotification } from '../../api/codexRpcClient'
 import { BROWSER_WORKSPACE_ROOT } from '../../config/runtime'
 import { requestBrowserToolApproval, subscribeBrowserToolApprovalNotifications } from './browserToolApprovalBridge'
-import XCODEX_WASM_BASE_INSTRUCTIONS from './prompt_wasm.md?raw'
+import XCODEX_WASM_AGENT_INSTRUCTIONS from './prompt_wasm.md?raw'
+import XCODEX_WASM_HELPER_INSTRUCTIONS from './prompt_wasm_helper.md?raw'
 import { wasmRuntimeStorage } from './storage'
 
 type WasmBrowserRuntime = BrowserCodexProtocolClient & {
@@ -34,6 +36,44 @@ type WasmRuntimeContext = {
 }
 let runtimeContextPromise: Promise<WasmRuntimeContext> | null = null
 
+function createModeScopedInstructions(runtimeMode: RuntimeMode): string {
+  const baseInstructions = runtimeMode === 'agent' || runtimeMode === 'chaos'
+    ? XCODEX_WASM_AGENT_INSTRUCTIONS
+    : XCODEX_WASM_HELPER_INSTRUCTIONS
+  const modeInstructions = {
+    chat: [
+      'The active runtime mode is "chat".',
+      'Treat this session as chat-only.',
+      'Do not claim browser tools, workspace access, file reading, file editing, or page JavaScript execution.',
+      'If the user asks what you can do, answer briefly and only as a chat assistant unless tools are visibly available in the current session.',
+      'Do not mention workspace, files, coding help, or code editing.',
+    ],
+    inspect: [
+      'The active runtime mode is "inspect".',
+      'You may describe read-only page inspection only when those tools are visibly available.',
+      'Do not claim click, fill, navigate, workspace patching, or page JavaScript execution.',
+      'Do not mention workspace, files, code editing, or writing code.',
+    ],
+    interact: [
+      'The active runtime mode is "interact".',
+      'You may describe page interaction only when those tools are visibly available.',
+      'Do not claim navigation, workspace patching, or page JavaScript execution.',
+      'Do not mention workspace, files, code editing, or writing code.',
+    ],
+    agent: [
+      'The active runtime mode is "agent".',
+      'You may describe browser interaction and workspace editing only when those tools are visibly available.',
+      'Do not claim navigation or page JavaScript execution.',
+    ],
+    chaos: [
+      'The active runtime mode is "chaos".',
+      'You may describe the full browser and workspace surface only when those tools are visibly available.',
+    ],
+  } satisfies Record<RuntimeMode, string[]>
+
+  return `${baseInstructions}\n\n# Active Runtime Mode\n${modeInstructions[runtimeMode].join('\n')}`
+}
+
 export function invalidateWasmRuntimeContext(): void {
   runtimeContextPromise = null
 }
@@ -44,6 +84,7 @@ export async function getWasmRuntimeContext(): Promise<WasmRuntimeContext> {
   }
 
   runtimeContextPromise = (async () => {
+    const initialConfig = await wasmRuntimeStorage.loadConfig()
     const context = await createBrowserCodexRuntimeContext({
       cwd: BROWSER_WORKSPACE_ROOT,
       storage: wasmRuntimeStorage,
@@ -51,7 +92,7 @@ export async function getWasmRuntimeContext(): Promise<WasmRuntimeContext> {
         rootPath: BROWSER_WORKSPACE_ROOT,
       }),
       bootstrap: {
-        baseInstructions: XCODEX_WASM_BASE_INSTRUCTIONS,
+        baseInstructions: createModeScopedInstructions(initialConfig.runtime_mode ?? 'chat'),
         developerInstructions: null,
         userInstructions: null,
         ephemeral: false,

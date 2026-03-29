@@ -20,6 +20,7 @@ import {
   isOpenRouterOauthSupported,
   startOpenRouterOauthFlow,
 } from '../runtime/wasm/openrouterOAuth'
+import { getRuntimeModePresentation } from '../runtime/wasm/runtimeModes'
 
 type UseWasmRuntimeSettingsOptions = {
   enabled: boolean
@@ -30,7 +31,7 @@ let pendingOpenRouterOauthCallback: Promise<Awaited<ReturnType<typeof consumeOpe
 
 export function useWasmRuntimeSettings(options: UseWasmRuntimeSettingsOptions) {
   const wasmSettingsDraft = ref<WasmRuntimeDraft>({
-    runtimeMode: 'default',
+    runtimeMode: 'chat',
     transportMode: 'xrouter-browser',
     providerDisplayName: 'OpenRouter via Browser Runtime',
     providerBaseUrl: 'https://openrouter.ai/api/v1',
@@ -51,7 +52,7 @@ export function useWasmRuntimeSettings(options: UseWasmRuntimeSettingsOptions) {
   const wasmRuntimeModelIds = ref<string[]>([])
   const isSavingWasmSettings = ref(false)
   const isConnectingOpenRouterOauth = ref(false)
-  const savedRuntimeMode = ref<RuntimeMode>('default')
+  const savedRuntimeMode = ref<RuntimeMode>('chat')
   const runtimePolicyOptions = getWasmRuntimePolicyPresetOptions()
 
   let wasmModelRefreshToken = 0
@@ -175,16 +176,16 @@ export function useWasmRuntimeSettings(options: UseWasmRuntimeSettingsOptions) {
   async function saveCurrentWasmRuntimeSettings(): Promise<void> {
     if (!options.enabled || isSavingWasmSettings.value) return
 
+    const nextMode = wasmSettingsDraft.value.runtimeMode
+    const confirmationText = getRuntimeModePresentation(nextMode).confirmationText
     if (
-      wasmSettingsDraft.value.runtimeMode === 'chaos'
-      && savedRuntimeMode.value !== 'chaos'
+      confirmationText
+      && savedRuntimeMode.value !== nextMode
       && typeof window !== 'undefined'
     ) {
-      const confirmed = window.confirm(
-        'Chaos mode enables high-risk browser capabilities. Approval-gated browser tools may inspect or script the current page context, including browser-visible storage and same-origin app state. Save anyway?',
-      )
+      const confirmed = window.confirm(confirmationText)
       if (!confirmed) {
-        wasmSettingsFeedback.value = 'Chaos mode change cancelled.'
+        wasmSettingsFeedback.value = `${getRuntimeModePresentation(nextMode).label} mode change cancelled.`
         wasmSettingsFeedbackTone.value = 'neutral'
         return
       }

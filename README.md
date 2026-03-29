@@ -142,11 +142,19 @@ That flow uses OpenRouter OAuth PKCE:
 The PKCE verifier is kept in `sessionStorage` only for the duration of the OAuth round-trip.
 The resulting API key is stored in IndexedDB together with the wasm runtime provider config.
 
-By default, an empty wasm runtime storage state now initializes to `OpenRouter via Browser Runtime`, so the runtime bootstrap path and the settings UI use the same provider default.
+By default, an empty wasm runtime storage state now initializes to `OpenRouter via Browser Runtime` in `chat` mode, so the runtime bootstrap path and the settings UI use the same provider default.
 
 ## Available Tools
 
 Tool availability depends on runtime mode.
+
+The current runtime modes are:
+
+- `chat`: no browser tools or workspace access
+- `inspect`: read-only page inspection
+- `interact`: page interaction without navigation
+- `agent`: browser interaction plus workspace access
+- `chaos`: full browser and workspace access
 
 ### WASM mode
 
@@ -321,7 +329,13 @@ npm install
 npm run dev
 ```
 
-This starts the Vite app in the default runtime mode.
+This starts the Vite app in `wasm` mode by default.
+
+If you still need the legacy server-backed UI, run:
+
+```bash
+npm run dev:server
+```
 
 ## Runtime Assets
 

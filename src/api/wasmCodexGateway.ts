@@ -729,6 +729,12 @@ export async function readThreadRaw(threadId: string): Promise<ThreadReadRespons
       throw error
     }
   }
+  const storedSession = await wasmStorage.loadStoredThreadSession(threadId).catch(() => null)
+  const runtimeTurns = Array.isArray(payload.thread.turns) ? payload.thread.turns : []
+  const hasStoredItems = Array.isArray(storedSession?.items) && storedSession.items.length > 0
+  if (runtimeTurns.length === 0 && hasStoredItems) {
+    payload = toStoredSessionPayload(storedSession)
+  }
   await syncThreadIndexFromThread(payload.thread)
   return payload
 }

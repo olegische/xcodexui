@@ -90,6 +90,8 @@
 
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, ref } from 'vue'
+import type { RuntimeMode } from 'xcodex-runtime/types'
+import { getRuntimeModePresentation } from '../../runtime/wasm/runtimeModes'
 import type { UiServerRequest } from '../../types/codex'
 
 type ParsedToolQuestion = {
@@ -104,6 +106,7 @@ type BrowserApprovalRequest = {
   canonicalToolName: string
   targetUrl: string | null
   targetOrigin: string | null
+  runtimeMode: RuntimeMode | null
   reason: string
 }
 
@@ -153,8 +156,17 @@ function readBrowserApprovalRequest(request: UiServerRequest): BrowserApprovalRe
     canonicalToolName: readString(raw.canonicalToolName) || readString(raw.toolName),
     targetUrl: readString(raw.targetUrl) || null,
     targetOrigin: readString(raw.targetOrigin) || null,
+    runtimeMode: isRuntimeModeValue(raw.runtimeMode) ? raw.runtimeMode : null,
     reason: readString(raw.reason),
   }
+}
+
+function isRuntimeModeValue(value: unknown): value is RuntimeMode {
+  return value === 'chat'
+    || value === 'inspect'
+    || value === 'interact'
+    || value === 'agent'
+    || value === 'chaos'
 }
 
 function describeRequestKind(request: UiServerRequest): string {
@@ -200,8 +212,14 @@ function describeRequestMeta(request: UiServerRequest): string {
   if (request.method === 'item/browserTool/requestApproval') {
     const browserRequest = readBrowserApprovalRequest(request)
     const target = browserRequest?.targetUrl || browserRequest?.targetOrigin || ''
-    if (target && time) return `${target} · ${time}`
+    const runtimeModeLabel = browserRequest?.runtimeMode === 'chaos'
+      ? getRuntimeModePresentation(browserRequest.runtimeMode).label
+      : ''
+    if (target && runtimeModeLabel && time) return `${target} · ${runtimeModeLabel} · ${time}`
+    if (target && runtimeModeLabel) return `${target} · ${runtimeModeLabel}`
+    if (runtimeModeLabel && time) return `${runtimeModeLabel} · ${time}`
     if (target) return target
+    if (runtimeModeLabel) return runtimeModeLabel
     if (time) return `Requested at ${time}`
     return ''
   }

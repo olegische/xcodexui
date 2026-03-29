@@ -1,4 +1,5 @@
 import type { RpcNotification } from '../../api/codexRpcClient'
+import type { RuntimeMode } from 'xcodex-runtime/types'
 
 type BrowserToolApprovalKind =
   | 'code_execution'
@@ -18,7 +19,7 @@ export type BrowserToolApprovalRequest = {
   toolName: string
   canonicalToolName: string
   requiredScopes: string[]
-  runtimeMode: 'default' | 'demo' | 'chaos'
+  runtimeMode: RuntimeMode
   origin: string
   displayOrigin: string
   targetOrigin: string | null

@@ -14,6 +14,7 @@ import type {
 } from 'xcodex-runtime/types'
 import { getWasmRuntimePolicyPreset, listWasmRuntimePolicyPresets, type WasmRuntimePolicyPreset } from './presets'
 import { getWasmRuntimeContext, invalidateWasmRuntimeContext } from './runtime'
+import { normalizeRuntimeMode as normalizeStoredRuntimeMode } from './runtimeModes'
 import {
   clearLegacyStoredWasmRuntimeState,
   loadStoredAuthState,
@@ -198,7 +199,7 @@ function fallbackApiKey(authState: AuthState | null): string {
 function createDefaultWasmRuntimeDraft(): WasmRuntimeDraft {
   const option = defaultProviderOption('openrouter')
   return {
-    runtimeMode: 'default',
+    runtimeMode: 'chat',
     transportMode: 'xrouter-browser',
     providerDisplayName: option.displayName,
     providerBaseUrl: option.baseUrl,
@@ -526,5 +527,5 @@ function draftFromConfig(config: CodexCompatibleConfig, authState: AuthState | n
 }
 
 function normalizeRuntimeMode(value: unknown): RuntimeMode {
-  return value === 'demo' || value === 'chaos' ? value : 'default'
+  return normalizeStoredRuntimeMode(value)
 }

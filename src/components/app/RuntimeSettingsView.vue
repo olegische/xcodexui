@@ -8,14 +8,10 @@
       <div class="runtime-settings-heading">
         <div class="runtime-settings-title-row">
           <h2 class="runtime-settings-title">Runtime</h2>
-          <span v-if="draft.runtimeMode === 'chaos'" class="runtime-settings-mode-badge">Chaos</span>
+          <span v-if="draft.runtimeMode === 'chaos'" class="runtime-settings-mode-badge runtime-settings-mode-badge-chaos">Chaos</span>
         </div>
         <p class="runtime-settings-subtitle">
-          {{
-            draft.runtimeMode === 'chaos'
-              ? 'This mode enables higher-risk browser capabilities. Approval-gated tools may inspect or script the current page context, including browser-visible storage, DOM state, and same-origin app state.'
-              : 'Browser-hosted XCodex WASM runtime configuration. Only the current provider config is stored locally in browser IndexedDB and handled directly by the browser runtime.'
-          }}
+          {{ selectedRuntimePolicy.description }}
         </p>
       </div>
     </div>
@@ -292,7 +288,11 @@ defineEmits<{
 }
 
 .runtime-settings-mode-badge {
-  @apply inline-flex items-center rounded-xl px-3 py-1 text-lg font-semibold leading-none text-white;
+  @apply inline-flex items-center rounded-xl border border-zinc-300 bg-zinc-100 px-3 py-1 text-sm font-semibold leading-none text-zinc-800;
+}
+
+.runtime-settings-mode-badge-chaos {
+  @apply border-transparent text-white;
   background: #e33422;
 }
 

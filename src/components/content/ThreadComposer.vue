@@ -212,7 +212,7 @@
           <button
             v-else
             class="thread-composer-submit"
-            :class="{ 'thread-composer-submit--chaos': isChaosMode }"
+            :class="{ 'thread-composer-submit--chaos': runtimeMode === 'chaos' }"
             type="button"
             aria-label="Send message"
             title="Send"
@@ -248,6 +248,7 @@
 
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import type { RuntimeMode } from 'xcodex-runtime/types'
 import type { ReasoningEffort } from '../../types/codex'
 import { useDictation } from '../../composables/useDictation'
 import { searchComposerFiles, uploadFile, type ComposerFileSuggestion } from '../../api/codexGateway'
@@ -267,10 +268,10 @@ const props = defineProps<{
   models: string[]
   selectedModel: string
   selectedReasoningEffort: ReasoningEffort | ''
+  runtimeMode?: RuntimeMode
   skills?: SkillItem[]
   isTurnInProgress?: boolean
   isInterruptingTurn?: boolean
-  isChaosMode?: boolean
   disabled?: boolean
   hasQueueAbove?: boolean
   sendWithEnter?: boolean

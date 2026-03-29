@@ -50,7 +50,7 @@
         :enable-dictation="!isWasmRuntime"
         :is-turn-in-progress="isSelectedThreadInProgress"
         :is-interrupting-turn="isInterruptingTurn"
-        :is-chaos-mode="isChaosMode"
+        :runtime-mode="runtimeMode"
         :has-queue-above="selectedThreadQueuedMessages.length > 0"
         :send-with-enter="sendWithEnter"
         :in-progress-submit-mode="inProgressSendMode"
@@ -78,6 +78,7 @@ import type {
 } from '../../types/codex'
 import type { QueuedMessage } from '../../composables/desktop-state/types'
 import type { WasmRuntimeStatus } from '../../runtime/wasm/settings'
+import type { RuntimeMode } from 'xcodex-runtime/types'
 
 defineProps<{
   filteredMessages: UiMessage[]
@@ -88,7 +89,7 @@ defineProps<{
   selectedThreadServerRequests: UiServerRequest[]
   isSelectedThreadInProgress: boolean
   isWasmRuntime: boolean
-  isChaosMode: boolean
+  runtimeMode: RuntimeMode
   isRollingBack: boolean
   selectedThreadQueuedMessages: QueuedMessage[]
   showWasmRuntimeSetupCta: boolean

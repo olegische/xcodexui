@@ -202,7 +202,7 @@ declare module 'xcodex-runtime/types' {
   export type DemoTransportMode = 'openai' | 'xrouter-browser' | 'openai-compatible'
   export type XrouterProvider = 'deepseek' | 'openai' | 'openrouter' | 'zai'
   export type ProviderKind = 'openai' | 'openai_compatible' | 'xrouter_browser'
-  export type RuntimeMode = 'default' | 'demo' | 'chaos'
+  export type RuntimeMode = 'chat' | 'inspect' | 'interact' | 'agent' | 'chaos'
 
   export type BrowserSecurityConfig = {
     allowed_origins?: string[] | null
@@ -353,7 +353,7 @@ declare module 'xcodex-runtime/types' {
     toolName: string
     canonicalToolName: string
     requiredScopes: string[]
-    runtimeMode: 'default' | 'demo' | 'chaos'
+    runtimeMode: RuntimeMode
     origin: string
     displayOrigin: string
     targetOrigin: string | null

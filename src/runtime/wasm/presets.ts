@@ -1,4 +1,5 @@
 import type { BrowserSecurityConfig, RuntimeMode } from 'xcodex-runtime/types'
+import { getRuntimeModePresentation, listRuntimeModes } from './runtimeModes'
 
 export type WasmRuntimePolicyPreset = {
   runtimeMode: RuntimeMode
@@ -70,37 +71,15 @@ function createBrowserSecurityPreset(): Required<BrowserSecurityConfig> {
 
 export function getWasmRuntimePolicyPreset(runtimeMode: RuntimeMode): WasmRuntimePolicyPreset {
   const browserSecurity = createBrowserSecurityPreset()
-
-  switch (runtimeMode) {
-    case 'demo':
-      return {
-        runtimeMode,
-        label: 'Demo',
-        description: 'Expanded read-only browser inspection. Dangerous tools still fail closed without explicit approval.',
-        browserSecurity,
-      }
-    case 'chaos':
-      return {
-        runtimeMode,
-        label: 'Chaos',
-        description: 'Broader browser interaction baseline. Navigation, HTTP inspection, and page JavaScript still fail closed without approval mediation.',
-        browserSecurity,
-      }
-    case 'default':
-    default:
-      return {
-        runtimeMode: 'default',
-        label: 'Default',
-        description: 'Conservative browser baseline for alpha. Dangerous tools fail closed and browser access stays pinned to the current app origin preset.',
-        browserSecurity,
-      }
+  const presentation = getRuntimeModePresentation(runtimeMode)
+  return {
+    runtimeMode: presentation.runtimeMode,
+    label: presentation.label,
+    description: presentation.description,
+    browserSecurity,
   }
 }
 
 export function listWasmRuntimePolicyPresets(): WasmRuntimePolicyPreset[] {
-  return [
-    getWasmRuntimePolicyPreset('default'),
-    getWasmRuntimePolicyPreset('demo'),
-    getWasmRuntimePolicyPreset('chaos'),
-  ]
+  return listRuntimeModes().map((runtimeMode) => getWasmRuntimePolicyPreset(runtimeMode))
 }
