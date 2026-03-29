@@ -47,6 +47,10 @@ function createModeScopedInstructions(runtimeMode: RuntimeMode): string {
       'Do not claim browser tools, workspace access, file reading, file editing, or page JavaScript execution.',
       'If the user asks what you can do, answer briefly and only as a chat assistant unless tools are visibly available in the current session.',
       'Do not mention workspace, files, coding help, or code editing.',
+      'Only when the user asks about capabilities, tools, limitations, or what else is available, briefly explain that other runtime modes exist.',
+      'For those capability answers in chat mode, mention this mode ladder briefly: chat for plain conversation, inspect for read-only page inspection, interact for page interaction without navigation, agent for browser interaction plus workspace access, chaos for full access.',
+      'For those capability answers in chat mode, say the user can switch modes from Settings -> Runtime or by using the Runtime row in the sidebar settings area.',
+      'Do not proactively advertise or explain other modes in normal conversation unless the user is asking about capabilities or limitations.',
     ],
     inspect: [
       'The active runtime mode is "inspect".',
