@@ -8,6 +8,7 @@ const MAX_WAVEFORM_SAMPLES = 256
 
 export function useDictation(options: {
   onTranscript: (text: string) => void
+  getLanguage?: () => string
   onEmpty?: () => void
   onError?: (error: unknown) => void
 }) {
@@ -26,6 +27,17 @@ export function useDictation(options: {
   let waveformSamples: number[] = []
   let isStartingRecording = false
   let stopRequestedBeforeStart = false
+  let transcribeAbortController: AbortController | null = null
+
+  function cancelTranscription(): void {
+    if (transcribeAbortController) {
+      transcribeAbortController.abort()
+      transcribeAbortController = null
+    }
+    if (state.value === 'transcribing') {
+      state.value = 'idle'
+    }
+  }
 
   function drawWaveform(): void {
     const canvas = waveformCanvasRef.value
@@ -131,6 +143,9 @@ export function useDictation(options: {
   }
 
   async function startRecording() {
+    if (state.value === 'transcribing') {
+      cancelTranscription()
+    }
     if (state.value !== 'idle' || !isSupported.value || isStartingRecording) return
     isStartingRecording = true
     stopRequestedBeforeStart = false
@@ -180,6 +195,13 @@ export function useDictation(options: {
     }
   }
 
+  function cancel() {
+    stopRequestedBeforeStart = false
+    cancelTranscription()
+    cleanup()
+    state.value = 'idle'
+  }
+
   async function transcribe(recordedChunks: Blob[], mimeType: string) {
     if (recordedChunks.length === 0) {
       options.onEmpty?.()
@@ -189,15 +211,23 @@ export function useDictation(options: {
 
     const blob = new Blob(recordedChunks, { type: mimeType })
     state.value = 'transcribing'
+    let requestAbortController: AbortController | null = null
 
     try {
       const ext = mimeType.split(/[/;]/)[1] ?? 'webm'
       const formData = new FormData()
       formData.append('file', blob, `codex.${ext}`)
+      const selectedLanguage = options.getLanguage?.().trim() ?? ''
+      if (selectedLanguage && selectedLanguage.toLowerCase() !== 'auto') {
+        formData.append('language', selectedLanguage)
+      }
+      requestAbortController = new AbortController()
+      transcribeAbortController = requestAbortController
 
       const response = await fetch('/codex-api/transcribe', {
         method: 'POST',
         body: formData,
+        signal: requestAbortController.signal,
       })
 
       const responseText = await response.text()
@@ -221,9 +251,17 @@ export function useDictation(options: {
         options.onEmpty?.()
       }
     } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') {
+        return
+      }
       options.onError?.(error)
     } finally {
-      state.value = 'idle'
+      if (requestAbortController && transcribeAbortController === requestAbortController) {
+        transcribeAbortController = null
+      }
+      if (state.value === 'transcribing') {
+        state.value = 'idle'
+      }
     }
   }
 
@@ -242,14 +280,16 @@ export function useDictation(options: {
     chunks = []
   }
 
-  onBeforeUnmount(cleanup)
+  onBeforeUnmount(() => {
+    cancel()
+  })
 
   function toggleRecording() {
     if (state.value === 'recording') {
       stopRecording()
       return
     }
-    if (state.value === 'idle') {
+    if (state.value === 'idle' || state.value === 'transcribing') {
       void startRecording()
     }
   }
@@ -262,5 +302,6 @@ export function useDictation(options: {
     startRecording,
     stopRecording,
     toggleRecording,
+    cancel,
   }
 }

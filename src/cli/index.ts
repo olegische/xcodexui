@@ -1,20 +1,52 @@
 import { createServer } from 'node:http'
 import { chmodSync, createWriteStream, existsSync, mkdirSync } from 'node:fs'
-import { readFile } from 'node:fs/promises'
+import { readFile, stat, writeFile } from 'node:fs/promises'
 import { homedir, networkInterfaces } from 'node:os'
-import { join } from 'node:path'
-import { spawn, spawnSync } from 'node:child_process'
+import { isAbsolute, join, resolve } from 'node:path'
+import { spawn } from 'node:child_process'
 import { createInterface } from 'node:readline/promises'
 import { fileURLToPath } from 'node:url'
 import { dirname } from 'node:path'
 import { get as httpsGet } from 'node:https'
 import { Command } from 'commander'
 import qrcode from 'qrcode-terminal'
+import {
+  canRunCommand,
+  getNpmGlobalBinDir,
+  getUserNpmPrefix,
+  prependPathEntry,
+  resolveCodexCommand,
+} from '../commandResolution.js'
+import {
+  parseApprovalPolicy,
+  parseSandboxMode,
+  resolveAppServerRuntimeConfig,
+} from '../server/appServerRuntimeConfig.js'
 import { createServer as createApp } from '../server/httpServer.js'
 import { generatePassword } from '../server/password.js'
+import { spawnSyncCommand } from '../utils/commandInvocation.js'
 
 const program = new Command().name('codexui').description('Web interface for Codex app-server')
 const __dirname = dirname(fileURLToPath(import.meta.url))
+let hasPromptedCloudflaredInstall = false
+
+function getCodexHomePath(): string {
+  return process.env.CODEX_HOME?.trim() || join(homedir(), '.codex')
+}
+
+function getCloudflaredPromptMarkerPath(): string {
+  return join(getCodexHomePath(), '.cloudflared-install-prompted')
+}
+
+function hasPromptedCloudflaredInstallPersisted(): boolean {
+  return existsSync(getCloudflaredPromptMarkerPath())
+}
+
+async function persistCloudflaredInstallPrompted(): Promise<void> {
+  const codexHome = getCodexHomePath()
+  mkdirSync(codexHome, { recursive: true })
+  await writeFile(getCloudflaredPromptMarkerPath(), `${Date.now()}\n`, 'utf8')
+}
 
 async function readCliVersion(): Promise<string> {
   try {
@@ -31,54 +63,24 @@ function isTermuxRuntime(): boolean {
   return Boolean(process.env.TERMUX_VERSION || process.env.PREFIX?.includes('/com.termux/'))
 }
 
-function canRun(command: string, args: string[] = []): boolean {
-  const result = spawnSync(command, args, { stdio: 'ignore' })
-  return result.status === 0
-}
-
 function runOrFail(command: string, args: string[], label: string): void {
-  const result = spawnSync(command, args, { stdio: 'inherit' })
+  const result = spawnSyncCommand(command, args, { stdio: 'inherit' })
   if (result.status !== 0) {
     throw new Error(`${label} failed with exit code ${String(result.status ?? -1)}`)
   }
 }
 
 function runWithStatus(command: string, args: string[]): number {
-  const result = spawnSync(command, args, { stdio: 'inherit' })
+  const result = spawnSyncCommand(command, args, { stdio: 'inherit' })
   return result.status ?? -1
 }
 
-function getUserNpmPrefix(): string {
-  return join(homedir(), '.npm-global')
-}
-
-function resolveCodexCommand(): string | null {
-  if (canRun('codex', ['--version'])) {
-    return 'codex'
-  }
-
-  const userCandidate = join(getUserNpmPrefix(), 'bin', 'codex')
-  if (existsSync(userCandidate) && canRun(userCandidate, ['--version'])) {
-    return userCandidate
-  }
-
-  const prefix = process.env.PREFIX?.trim()
-  if (!prefix) {
-    return null
-  }
-  const candidate = join(prefix, 'bin', 'codex')
-  if (existsSync(candidate) && canRun(candidate, ['--version'])) {
-    return candidate
-  }
-  return null
-}
-
 function resolveCloudflaredCommand(): string | null {
-  if (canRun('cloudflared', ['--version'])) {
+  if (canRunCommand('cloudflared', ['--version'])) {
     return 'cloudflared'
   }
   const localCandidate = join(homedir(), '.local', 'bin', 'cloudflared')
-  if (existsSync(localCandidate) && canRun(localCandidate, ['--version'])) {
+  if (existsSync(localCandidate) && canRunCommand(localCandidate, ['--version'])) {
     return localCandidate
   }
   return null
@@ -145,7 +147,7 @@ async function ensureCloudflaredInstalledLinux(): Promise<string | null> {
   console.log('\ncloudflared not found. Installing to ~/.local/bin...\n')
   await downloadFile(downloadUrl, destination)
   chmodSync(destination, 0o755)
-  process.env.PATH = `${userBinDir}:${process.env.PATH ?? ''}`
+  process.env.PATH = prependPathEntry(process.env.PATH ?? '', userBinDir)
 
   const installed = resolveCloudflaredCommand()
   if (!installed) {
@@ -156,6 +158,16 @@ async function ensureCloudflaredInstalledLinux(): Promise<string | null> {
 }
 
 async function shouldInstallCloudflaredInteractively(): Promise<boolean> {
+  if (hasPromptedCloudflaredInstall || hasPromptedCloudflaredInstallPersisted()) {
+    return false
+  }
+  hasPromptedCloudflaredInstall = true
+  await persistCloudflaredInstallPrompted()
+
+  if (process.platform === 'win32') {
+    return false
+  }
+
   if (!process.stdin.isTTY || !process.stdout.isTTY) {
     console.warn('\n[cloudflared] cloudflared is missing and terminal is non-interactive, skipping install.')
     return false
@@ -177,6 +189,10 @@ async function resolveCloudflaredForTunnel(): Promise<string | null> {
     return current
   }
 
+  if (process.platform === 'win32') {
+    return null
+  }
+
   const installApproved = await shouldInstallCloudflaredInteractively()
   if (!installApproved) {
     return null
@@ -186,7 +202,7 @@ async function resolveCloudflaredForTunnel(): Promise<string | null> {
 }
 
 function hasCodexAuth(): boolean {
-  const codexHome = process.env.CODEX_HOME?.trim() || join(homedir(), '.codex')
+  const codexHome = getCodexHomePath()
   return existsSync(join(codexHome, 'auth.json'))
 }
 
@@ -204,7 +220,7 @@ function ensureCodexInstalled(): string | null {
       const userPrefix = getUserNpmPrefix()
       console.log(`\nGlobal npm install requires elevated permissions. Retrying with --prefix ${userPrefix}...\n`)
       runOrFail('npm', ['install', '-g', '--prefix', userPrefix, pkg], `${label} (user prefix)`)
-      process.env.PATH = `${join(userPrefix, 'bin')}:${process.env.PATH ?? ''}`
+      process.env.PATH = prependPathEntry(process.env.PATH ?? '', getNpmGlobalBinDir(userPrefix))
     }
 
     if (isTermuxRuntime()) {
@@ -236,14 +252,32 @@ function ensureCodexInstalled(): string | null {
   return codexCommand
 }
 
-function resolvePassword(input: string | boolean): string | undefined {
+type PasswordResolution = {
+  password: string | undefined
+  generated: boolean
+}
+
+function resolvePassword(input: string | boolean): PasswordResolution {
   if (input === false) {
-    return undefined
+    return { password: undefined, generated: false }
   }
   if (typeof input === 'string') {
-    return input
+    return { password: input, generated: false }
   }
-  return generatePassword()
+  return { password: generatePassword(), generated: true }
+}
+
+function getGeneratedPasswordPath(): string {
+  return join(getCodexHomePath(), 'codexui-password')
+}
+
+async function persistGeneratedPassword(password: string): Promise<string> {
+  const codexHome = getCodexHomePath()
+  mkdirSync(codexHome, { recursive: true })
+  const passwordPath = getGeneratedPasswordPath()
+  await writeFile(passwordPath, `${password}\n`, { encoding: 'utf8', mode: 0o600 })
+  chmodSync(passwordPath, 0o600)
+  return passwordPath
 }
 
 function printTermuxKeepAlive(lines: string[]): void {
@@ -269,6 +303,10 @@ function openBrowser(url: string): void {
   child.unref()
 }
 
+function buildTunnelAutologinUrl(tunnelUrl: string, _password: string | undefined): string {
+  return tunnelUrl
+}
+
 function parseCloudflaredUrl(chunk: string): string | null {
   const urlMatch = chunk.match(/https:\/\/[a-zA-Z0-9-]+\.trycloudflare\.com/g)
   if (!urlMatch || urlMatch.length === 0) {
@@ -279,21 +317,51 @@ function parseCloudflaredUrl(chunk: string): string | null {
 
 function getAccessibleUrls(port: number): string[] {
   const urls = new Set<string>([`http://localhost:${String(port)}`])
-  const interfaces = networkInterfaces()
-  for (const entries of Object.values(interfaces)) {
-    if (!entries) {
-      continue
-    }
-    for (const entry of entries) {
-      if (entry.internal) {
+  try {
+    const interfaces = networkInterfaces()
+    for (const entries of Object.values(interfaces)) {
+      if (!entries) {
         continue
       }
-      if (entry.family === 'IPv4') {
-        urls.add(`http://${entry.address}:${String(port)}`)
+      for (const entry of entries) {
+        if (entry.internal) {
+          continue
+        }
+        if (entry.family === 'IPv4') {
+          urls.add(`http://${entry.address}:${String(port)}`)
+        }
       }
     }
-  }
+  } catch {}
   return Array.from(urls)
+}
+
+function isTailscaleIPv4Address(address: string): boolean {
+  const parts = address.split('.')
+  if (parts.length !== 4) return false
+  const octets = parts.map((part) => Number.parseInt(part, 10))
+  if (octets.some((value) => Number.isNaN(value) || value < 0 || value > 255)) return false
+  return octets[0] === 100 && octets[1] >= 64 && octets[1] <= 127
+}
+
+function isTailscaleIPv6Address(address: string): boolean {
+  const normalized = address.toLowerCase()
+  return normalized.startsWith('fd7a:115c:a1e0:')
+}
+
+function hasDetectedTailscaleIp(): boolean {
+  try {
+    const interfaces = networkInterfaces()
+    for (const entries of Object.values(interfaces)) {
+      if (!entries) continue
+      for (const entry of entries) {
+        if (entry.internal) continue
+        if (entry.family === 'IPv4' && isTailscaleIPv4Address(entry.address)) return true
+        if (entry.family === 'IPv6' && isTailscaleIPv6Address(entry.address)) return true
+      }
+    }
+  } catch {}
+  return false
 }
 
 async function startCloudflaredTunnel(command: string, localPort: number): Promise<{
@@ -366,19 +434,111 @@ function listenWithFallback(server: ReturnType<typeof createServer>, startPort: 
   })
 }
 
-async function startServer(options: { port: string; password: string | boolean; tunnel: boolean }) {
+function getCodexGlobalStatePath(): string {
+  const codexHome = getCodexHomePath()
+  return join(codexHome, '.codex-global-state.json')
+}
+
+function normalizeUniqueStrings(value: unknown): string[] {
+  if (!Array.isArray(value)) return []
+  const next: string[] = []
+  for (const item of value) {
+    if (typeof item !== 'string') continue
+    const trimmed = item.trim()
+    if (!trimmed || next.includes(trimmed)) continue
+    next.push(trimmed)
+  }
+  return next
+}
+
+async function persistLaunchProject(projectPath: string): Promise<void> {
+  const trimmed = projectPath.trim()
+  if (!trimmed) return
+  const normalizedPath = isAbsolute(trimmed) ? trimmed : resolve(trimmed)
+  const directoryInfo = await stat(normalizedPath)
+  if (!directoryInfo.isDirectory()) {
+    throw new Error(`Not a directory: ${normalizedPath}`)
+  }
+
+  const statePath = getCodexGlobalStatePath()
+  let payload: Record<string, unknown> = {}
+  try {
+    const raw = await readFile(statePath, 'utf8')
+    const parsed = JSON.parse(raw) as unknown
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      payload = parsed as Record<string, unknown>
+    }
+  } catch {
+    payload = {}
+  }
+
+  const roots = normalizeUniqueStrings(payload['electron-saved-workspace-roots'])
+  const activeRoots = normalizeUniqueStrings(payload['active-workspace-roots'])
+  payload['electron-saved-workspace-roots'] = [
+    normalizedPath,
+    ...roots.filter((value) => value !== normalizedPath),
+  ]
+  payload['active-workspace-roots'] = [
+    normalizedPath,
+    ...activeRoots.filter((value) => value !== normalizedPath),
+  ]
+  await writeFile(statePath, JSON.stringify(payload), 'utf8')
+}
+
+async function addProjectOnly(projectPath: string): Promise<void> {
+  const trimmed = projectPath.trim()
+  if (!trimmed) {
+    throw new Error('Missing project path')
+  }
+  await persistLaunchProject(trimmed)
+}
+
+async function startServer(options: {
+  port: string
+  password: string | boolean
+  tunnel: boolean
+  open: boolean
+  login: boolean
+  memories: boolean
+  sandboxMode?: string
+  approvalPolicy?: string
+  projectPath?: string
+}) {
   const version = await readCliVersion()
+  const projectPath = options.projectPath?.trim() ?? ''
+  if (projectPath.length > 0) {
+    try {
+      await persistLaunchProject(projectPath)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      console.warn(`\n[project] Could not open launch project: ${message}\n`)
+    }
+  }
   const codexCommand = ensureCodexInstalled() ?? resolveCodexCommand()
-  if (!hasCodexAuth() && codexCommand) {
-    console.log('\nCodex is not logged in. Starting `codex login`...\n')
-    runOrFail(codexCommand, ['login'], 'Codex login')
+  if (codexCommand) {
+    process.env.CODEXUI_CODEX_COMMAND = codexCommand
+  }
+  if (options.sandboxMode) {
+    process.env.CODEXUI_SANDBOX_MODE = options.sandboxMode
+  }
+  if (options.approvalPolicy) {
+    process.env.CODEXUI_APPROVAL_POLICY = options.approvalPolicy
+  }
+  const runtimeConfig = resolveAppServerRuntimeConfig()
+  if (options.login && !hasCodexAuth()) {
+    console.log('\nCodex is not logged in. You can log in later via settings or run `codexui login`.\n')
   }
   const requestedPort = parseInt(options.port, 10)
-  const password = resolvePassword(options.password)
+  const passwordResolution = resolvePassword(options.password)
+  const password = passwordResolution.password
+  const generatedPasswordPath = password && passwordResolution.generated
+    ? await persistGeneratedPassword(password)
+    : null
   const { app, dispose, attachWebSocket } = createApp({ password })
   const server = createServer(app)
   attachWebSocket(server)
   const port = await listenWithFallback(server, requestedPort)
+  process.env.CODEXUI_SERVER_PORT = String(port)
   let tunnelChild: ReturnType<typeof spawn> | null = null
   let tunnelUrl: string | null = null
 
@@ -404,6 +564,8 @@ async function startServer(options: { port: string; password: string | boolean; 
     '  GitHub:   https://github.com/friuns2/codexui',
     '',
     `  Bind:     http://0.0.0.0:${String(port)}`,
+    `  Codex sandbox: ${runtimeConfig.sandboxMode}`,
+    `  Approval policy: ${runtimeConfig.approvalPolicy}`,
   ]
   const accessUrls = getAccessibleUrls(port)
   if (accessUrls.length > 0) {
@@ -417,22 +579,25 @@ async function startServer(options: { port: string; password: string | boolean; 
     lines.push(`  Requested port ${String(requestedPort)} was unavailable; using ${String(port)}.`)
   }
 
-  if (password) {
-    lines.push(`  Password: ${password}`)
+  if (generatedPasswordPath) {
+    lines.push(`  Generated password file: ${generatedPasswordPath}`)
+    lines.push('  Use that file to retrieve the password for untrusted origins.')
   }
+
+  const tunnelQrUrl = tunnelUrl ? buildTunnelAutologinUrl(tunnelUrl, password) : null
   if (tunnelUrl) {
-    lines.push(`  Tunnel:   ${tunnelUrl}`)
+    lines.push(`  Tunnel:   ${tunnelQrUrl ?? tunnelUrl}`)
     lines.push('  Tunnel QR code below')
   }
 
   printTermuxKeepAlive(lines)
   lines.push('')
   console.log(lines.join('\n'))
-  if (tunnelUrl) {
-    qrcode.generate(tunnelUrl, { small: true })
+  if (tunnelQrUrl) {
+    qrcode.generate(tunnelQrUrl, { small: true })
     console.log('')
   }
-  openBrowser(`http://localhost:${String(port)}`)
+  if (options.open) openBrowser(`http://localhost:${String(port)}`)
 
   function shutdown() {
     console.log('\nShutting down...')
@@ -456,18 +621,87 @@ async function startServer(options: { port: string; password: string | boolean; 
 
 async function runLogin() {
   const codexCommand = ensureCodexInstalled() ?? 'codex'
+  process.env.CODEXUI_CODEX_COMMAND = codexCommand
   console.log('\nStarting `codex login`...\n')
   runOrFail(codexCommand, ['login'], 'Codex login')
 }
 
 program
-  .option('-p, --port <port>', 'port to listen on', '5999')
+  .argument('[projectPath]', 'project directory to open on launch')
+  .option('--open-project <path>', 'open project directory on launch (Codex desktop parity)')
+  .option('-p, --port <port>', 'port to listen on', '5900')
   .option('--password <pass>', 'set a specific password')
   .option('--no-password', 'disable password protection')
-  .option('--tunnel', 'start cloudflared tunnel', true)
+  .option('--tunnel', 'start cloudflared tunnel (default is auto by Tailscale detection)', true)
   .option('--no-tunnel', 'disable cloudflared tunnel startup')
-  .action(async (opts: { port: string; password: string | boolean; tunnel: boolean }) => {
-    await startServer(opts)
+  .option('--open', 'open browser on startup', true)
+  .option('--no-open', 'do not open browser on startup')
+  .option('--login', 'run automatic Codex login bootstrap', true)
+  .option('--no-login', 'skip automatic Codex login bootstrap')
+  .option('--memories', 'enable Codex memories for spawned app-server processes', true)
+  .option('--no-memories', 'disable Codex memories for spawned app-server processes')
+  .option('--sandbox-mode <mode>', 'Codex sandbox mode: read-only, workspace-write, danger-full-access')
+  .option('--approval-policy <policy>', 'Codex approval policy: untrusted, on-failure, on-request, never')
+  .action(async (
+    projectPath: string | undefined,
+    opts: {
+      port: string
+      password: string | boolean
+      tunnel: boolean
+      open: boolean
+      login: boolean
+      memories: boolean
+      sandboxMode?: string
+      approvalPolicy?: string
+      openProject?: string
+    },
+  ) => {
+    const rawArgv = process.argv.slice(2)
+    const openProjectFlagIndex = rawArgv.findIndex((arg) => arg === '--open-project' || arg.startsWith('--open-project='))
+    const tunnelFlagExplicit = rawArgv.some((arg) => (
+      arg === '--tunnel'
+      || arg === '--no-tunnel'
+      || arg.startsWith('--tunnel=')
+      || arg.startsWith('--no-tunnel=')
+    ))
+    const memoriesFlagExplicit = rawArgv.some((arg) => (
+      arg === '--memories'
+      || arg === '--no-memories'
+      || arg.startsWith('--memories=')
+      || arg.startsWith('--no-memories=')
+    ))
+    const effectiveTunnel = tunnelFlagExplicit ? opts.tunnel : hasDetectedTailscaleIp()
+    if (memoriesFlagExplicit) {
+      process.env.CODEXUI_MEMORIES = opts.memories ? 'true' : 'false'
+    }
+
+    let openProjectOnly = (opts.openProject ?? '').trim()
+    if (!openProjectOnly && openProjectFlagIndex >= 0 && projectPath?.trim()) {
+      // Commander may map "--open-project ." to the positional arg in this command layout.
+      openProjectOnly = projectPath.trim()
+    }
+    if (openProjectOnly.length > 0) {
+      await addProjectOnly(openProjectOnly)
+      console.log(`Added project: ${openProjectOnly}`)
+      return
+    }
+
+    const launchProject = (projectPath ?? '').trim()
+    if (opts.sandboxMode) {
+      const parsedSandboxMode = parseSandboxMode(opts.sandboxMode)
+      if (!parsedSandboxMode) {
+        throw new Error(`Invalid sandbox mode: ${opts.sandboxMode}`)
+      }
+      opts.sandboxMode = parsedSandboxMode
+    }
+    if (opts.approvalPolicy) {
+      const parsedApprovalPolicy = parseApprovalPolicy(opts.approvalPolicy)
+      if (!parsedApprovalPolicy) {
+        throw new Error(`Invalid approval policy: ${opts.approvalPolicy}`)
+      }
+      opts.approvalPolicy = parsedApprovalPolicy
+    }
+    await startServer({ ...opts, tunnel: effectiveTunnel, projectPath: launchProject })
   })
 
 program.command('login').description('Install/check Codex CLI and run `codex login`').action(runLogin)

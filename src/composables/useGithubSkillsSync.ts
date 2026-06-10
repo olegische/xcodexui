@@ -1,6 +1,4 @@
 import { computed, ref } from 'vue'
-import { initializeApp, getApp, getApps } from 'firebase/app'
-import { getAuth, GithubAuthProvider, signInWithPopup } from 'firebase/auth'
 
 type ToastType = 'success' | 'error'
 
@@ -37,11 +35,24 @@ const firebaseConfig = {
   appId: '1:99275526699:web:3b623e1e2996108b52106e',
 }
 
+let firebaseGithubAuthLoader:
+  Promise<[typeof import('firebase/app'), typeof import('firebase/auth')]> | null = null
+
+function loadFirebaseGithubAuth() {
+  if (!firebaseGithubAuthLoader) {
+    firebaseGithubAuthLoader = Promise.all([
+      import('firebase/app'),
+      import('firebase/auth'),
+    ])
+  }
+  return firebaseGithubAuthLoader
+}
+
 export function useGithubSkillsSync(options: UseGithubSkillsSyncOptions) {
   const deviceLogin = ref<{ device_code: string; user_code: string; verification_uri: string } | null>(null)
   const syncActionStatus = ref('')
   const syncActionError = ref('')
-  const syncActionInFlight = ref<'pull' | 'push' | ''>('')
+  const syncActionInFlight = ref<'pull' | 'push' | 'startup-sync' | ''>('')
   const syncStatus = ref<SkillsSyncStatus>({
     loggedIn: false,
     githubUsername: '',
@@ -61,6 +72,7 @@ export function useGithubSkillsSync(options: UseGithubSkillsSyncOptions) {
 
   const isPullInFlight = computed(() => syncActionInFlight.value === 'pull')
   const isPushInFlight = computed(() => syncActionInFlight.value === 'push')
+  const isStartupSyncInFlight = computed(() => syncActionInFlight.value === 'startup-sync')
   const isSyncActionInFlight = computed(() => syncActionInFlight.value !== '')
 
   async function loadSyncStatus(): Promise<void> {
@@ -109,6 +121,9 @@ export function useGithubSkillsSync(options: UseGithubSkillsSyncOptions) {
 
   async function startGithubFirebaseLogin(): Promise<void> {
     try {
+      const [firebaseApp, firebaseAuth] = await loadFirebaseGithubAuth()
+      const { getApp, getApps, initializeApp } = firebaseApp
+      const { getAuth, GithubAuthProvider, signInWithPopup } = firebaseAuth
       const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig)
       const auth = getAuth(app)
       const provider = new GithubAuthProvider()
@@ -177,6 +192,28 @@ export function useGithubSkillsSync(options: UseGithubSkillsSyncOptions) {
     }
   }
 
+  async function startupSkillsSync(): Promise<void> {
+    syncActionError.value = ''
+    syncActionStatus.value = 'startup-sync-started'
+    syncActionInFlight.value = 'startup-sync'
+    try {
+      const resp = await fetch('/codex-api/skills-sync/startup-sync', { method: 'POST' })
+      const data = (await resp.json()) as { ok?: boolean; error?: string }
+      if (!resp.ok || !data.ok) throw new Error(data.error || 'Failed to run startup sync')
+      await options.onPulled()
+      await loadSyncStatus()
+      syncActionStatus.value = 'startup-sync-success'
+      options.showToast('Startup sync completed')
+    } catch (e) {
+      const message = e instanceof Error ? e.message : 'Failed startup sync'
+      syncActionError.value = message
+      syncActionStatus.value = 'startup-sync-failed'
+      options.showToast(message, 'error')
+    } finally {
+      syncActionInFlight.value = ''
+    }
+  }
+
   async function logoutGithub(): Promise<void> {
     try {
       const resp = await fetch('/codex-api/skills-sync/github/logout', { method: 'POST' })
@@ -193,11 +230,13 @@ export function useGithubSkillsSync(options: UseGithubSkillsSyncOptions) {
     deviceLogin,
     isPullInFlight,
     isPushInFlight,
+    isStartupSyncInFlight,
     isSyncActionInFlight,
     loadSyncStatus,
     logoutGithub,
     pullSkillsSync,
     pushSkillsSync,
+    startupSkillsSync,
     startGithubFirebaseLogin,
     startGithubLogin,
     syncActionError,

@@ -3,22 +3,27 @@
     <button
       class="composer-dropdown-trigger"
       type="button"
+      :title="triggerAccessibleLabel"
+      :aria-label="triggerAccessibleLabel"
       :disabled="disabled"
       @click="onToggle"
     >
-      <span class="composer-dropdown-value">{{ selectedLabel }}</span>
+      <component :is="selectedPrefixIcon" v-if="selectedPrefixIcon" class="composer-dropdown-prefix-icon" />
+      <span v-if="!iconOnly" class="composer-dropdown-value">{{ selectedLabel }}</span>
       <IconTablerChevronDown class="composer-dropdown-chevron" />
     </button>
 
     <div
       v-if="isOpen"
+      ref="menuWrapRef"
       class="composer-dropdown-menu-wrap"
       :class="{
         'composer-dropdown-menu-wrap-up': openDirection === 'up',
         'composer-dropdown-menu-wrap-down': openDirection === 'down',
       }"
+      :style="menuWrapStyle"
     >
-      <div class="composer-dropdown-menu">
+      <div ref="menuRef" class="composer-dropdown-menu">
         <div v-if="enableSearch" class="composer-dropdown-search-wrap">
           <input
             ref="searchInputRef"
@@ -42,42 +47,17 @@
             </button>
           </li>
           <li v-if="filteredOptions.length === 0" class="composer-dropdown-empty">
-            No matching projects
+            {{ emptyText }}
           </li>
         </ul>
 
-        <div v-if="showAddAction" class="composer-dropdown-add-wrap">
-          <template v-if="isAdding">
-            <input
-              ref="addInputRef"
-              v-model="addDraft"
-              class="composer-dropdown-add-input"
-              type="text"
-              :placeholder="addPlaceholderText"
-              @keydown.enter.prevent="onConfirmAdd"
-              @keydown.esc.prevent="onCancelAdd"
-            />
-            <div class="composer-dropdown-add-actions">
-              <button type="button" class="composer-dropdown-add-btn" @click="onConfirmAdd">Open</button>
-              <button type="button" class="composer-dropdown-add-btn" @click="onCancelAdd">Cancel</button>
-            </div>
-          </template>
-          <button
-            v-else
-            type="button"
-            class="composer-dropdown-add"
-            @click="onStartAdd"
-          >
-            {{ addActionLabelText }}
-          </button>
-        </div>
       </div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch, type Component } from 'vue'
 import IconTablerChevronDown from '../icons/IconTablerChevronDown.vue'
 
 type DropdownOption = {
@@ -90,27 +70,27 @@ const props = defineProps<{
   options: DropdownOption[]
   placeholder?: string
   disabled?: boolean
+  selectedPrefixIcon?: Component | null
+  iconOnly?: boolean
   openDirection?: 'up' | 'down'
+  menuAlign?: 'start' | 'end'
   enableSearch?: boolean
   searchPlaceholder?: string
-  showAddAction?: boolean
-  addActionLabel?: string
-  defaultAddValue?: string
-  addPlaceholder?: string
+  emptyLabel?: string
 }>()
 
 const emit = defineEmits<{
   'update:modelValue': [value: string]
-  add: [value: string]
 }>()
 
 const rootRef = ref<HTMLElement | null>(null)
+const menuWrapRef = ref<HTMLElement | null>(null)
+const menuRef = ref<HTMLElement | null>(null)
 const searchInputRef = ref<HTMLInputElement | null>(null)
-const addInputRef = ref<HTMLInputElement | null>(null)
 const isOpen = ref(false)
 const searchQuery = ref('')
-const isAdding = ref(false)
-const addDraft = ref('')
+const menuWrapStyle = ref<Record<string, string>>({})
+let isLayoutListenerAttached = false
 
 const selectedLabel = computed(() => {
   const selected = props.options.find((option) => option.value === props.modelValue)
@@ -119,11 +99,12 @@ const selectedLabel = computed(() => {
 })
 
 const openDirection = computed(() => props.openDirection ?? 'down')
+const menuAlign = computed(() => props.menuAlign ?? 'start')
+const iconOnly = computed(() => props.iconOnly === true)
 const enableSearch = computed(() => props.enableSearch === true)
-const showAddAction = computed(() => props.showAddAction === true)
 const searchPlaceholderText = computed(() => props.searchPlaceholder?.trim() || 'Quick search projects')
-const addActionLabelText = computed(() => props.addActionLabel?.trim() || 'Add new project')
-const addPlaceholderText = computed(() => props.addPlaceholder?.trim() || 'Project name or absolute path')
+const emptyText = computed(() => props.emptyLabel?.trim() || 'No results')
+const triggerAccessibleLabel = computed(() => selectedLabel.value || props.placeholder?.trim() || 'Select option')
 const filteredOptions = computed(() => {
   const query = searchQuery.value.trim().toLowerCase()
   if (!query) return props.options
@@ -137,16 +118,64 @@ function onToggle(): void {
   isOpen.value = !isOpen.value
 }
 
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value))
+}
+
+function updateMenuPosition(): void {
+  if (!isOpen.value) return
+  const root = rootRef.value
+  if (!root || typeof window === 'undefined') return
+
+  const rect = root.getBoundingClientRect()
+  const viewportWidth = window.innerWidth
+  const viewportHeight = window.innerHeight
+  const viewportPadding = 8
+  const gap = 8
+  const maxMenuWidth = Math.max(0, viewportWidth - viewportPadding * 2)
+  const measuredWidth = menuRef.value?.offsetWidth ?? menuWrapRef.value?.offsetWidth ?? 224
+  const measuredHeight = menuRef.value?.offsetHeight ?? menuWrapRef.value?.offsetHeight ?? 0
+  const menuWidth = Math.min(measuredWidth, maxMenuWidth)
+  const maxLeft = Math.max(viewportPadding, viewportWidth - menuWidth - viewportPadding)
+  const desiredLeft = menuAlign.value === 'end' ? rect.right - menuWidth : rect.left
+  const left = clamp(desiredLeft, viewportPadding, maxLeft)
+
+  let top = openDirection.value === 'up'
+    ? rect.top - measuredHeight - gap
+    : rect.bottom + gap
+  if (measuredHeight > 0 && top + measuredHeight > viewportHeight - viewportPadding) {
+    top = viewportHeight - measuredHeight - viewportPadding
+  }
+  top = Math.max(viewportPadding, top)
+
+  menuWrapStyle.value = {
+    position: 'fixed',
+    left: `${left}px`,
+    right: 'auto',
+    top: `${top}px`,
+    bottom: 'auto',
+    width: `${menuWidth}px`,
+  }
+}
+
+function addLayoutListeners(): void {
+  if (isLayoutListenerAttached || typeof window === 'undefined') return
+  window.addEventListener('resize', updateMenuPosition)
+  window.addEventListener('scroll', updateMenuPosition, true)
+  isLayoutListenerAttached = true
+}
+
+function removeLayoutListeners(): void {
+  if (!isLayoutListenerAttached || typeof window === 'undefined') return
+  window.removeEventListener('resize', updateMenuPosition)
+  window.removeEventListener('scroll', updateMenuPosition, true)
+  isLayoutListenerAttached = false
+}
+
 function onSelect(value: string): void {
   emit('update:modelValue', value)
   isOpen.value = false
   searchQuery.value = ''
-}
-
-function onStartAdd(): void {
-  isAdding.value = true
-  addDraft.value = props.defaultAddValue?.trim() || ''
-  nextTick(() => addInputRef.value?.focus())
 }
 
 function onEscapeSearch(): void {
@@ -155,23 +184,6 @@ function onEscapeSearch(): void {
     return
   }
   isOpen.value = false
-}
-
-function onConfirmAdd(): void {
-  const value = addDraft.value.trim()
-  if (!value) return
-  emit('add', value)
-  isAdding.value = false
-  addDraft.value = ''
-  isOpen.value = false
-  searchQuery.value = ''
-}
-
-function onCancelAdd(): void {
-  isAdding.value = false
-  addDraft.value = ''
-  isOpen.value = false
-  searchQuery.value = ''
 }
 
 function onDocumentPointerDown(event: PointerEvent): void {
@@ -184,18 +196,20 @@ function onDocumentPointerDown(event: PointerEvent): void {
   if (root.contains(target)) return
   isOpen.value = false
   searchQuery.value = ''
-  isAdding.value = false
-  addDraft.value = ''
 }
 
 watch(isOpen, (open) => {
   if (!open) {
-    isAdding.value = false
-    addDraft.value = ''
+    removeLayoutListeners()
+    menuWrapStyle.value = {}
     return
   }
-  if (!enableSearch.value) return
-  nextTick(() => searchInputRef.value?.focus())
+  addLayoutListeners()
+  nextTick(() => {
+    updateMenuPosition()
+    window.requestAnimationFrame(updateMenuPosition)
+    if (enableSearch.value) searchInputRef.value?.focus()
+  })
 })
 
 onMounted(() => {
@@ -204,6 +218,7 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   window.removeEventListener('pointerdown', onDocumentPointerDown)
+  removeLayoutListeners()
 })
 </script>
 
@@ -215,7 +230,11 @@ onBeforeUnmount(() => {
 }
 
 .composer-dropdown-trigger {
-  @apply inline-flex h-7 min-w-0 items-center gap-1 border-0 bg-transparent p-0 text-sm leading-none text-zinc-500 outline-none transition;
+  @apply inline-flex min-h-7 min-w-0 items-center gap-1 border-0 bg-transparent px-0 py-0.5 text-sm leading-tight text-zinc-500 outline-none transition;
+}
+
+.composer-dropdown-prefix-icon {
+  @apply h-3.5 w-3.5 shrink-0 text-amber-500;
 }
 
 .composer-dropdown-trigger:disabled {
@@ -223,7 +242,7 @@ onBeforeUnmount(() => {
 }
 
 .composer-dropdown-value {
-  @apply whitespace-nowrap text-left truncate;
+  @apply whitespace-nowrap text-left truncate pb-px;
 }
 
 .composer-dropdown-chevron {
@@ -268,25 +287,5 @@ onBeforeUnmount(() => {
 
 .composer-dropdown-empty {
   @apply px-2 py-1.5 text-xs text-zinc-500;
-}
-
-.composer-dropdown-add {
-  @apply mt-1 flex w-full items-center rounded-lg border-0 border-t border-zinc-200 bg-transparent px-2 py-2 text-left text-sm font-medium text-zinc-800 transition hover:bg-zinc-100;
-}
-
-.composer-dropdown-add-wrap {
-  @apply mt-1 border-t border-zinc-200 pt-1;
-}
-
-.composer-dropdown-add-input {
-  @apply w-full rounded-md border border-zinc-200 bg-white px-2 py-1 text-xs text-zinc-800 outline-none transition focus:border-zinc-400;
-}
-
-.composer-dropdown-add-actions {
-  @apply mt-1 flex items-center gap-1;
-}
-
-.composer-dropdown-add-btn {
-  @apply rounded-md border border-zinc-200 bg-white px-2 py-0.5 text-xs text-zinc-700 transition hover:bg-zinc-100;
 }
 </style>
